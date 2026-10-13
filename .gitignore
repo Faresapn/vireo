@@ -1,0 +1,42 @@
+# ===== Secrets & credentials (NEVER commit) =====
+.env
+.env.*
+*.key
+*_key
+*_token
+*credentials*
+*.pem
+
+# ===== Operational data (not for public repo) =====
+# Downloaded reference videos (3rd-party/copyright), character photos, generated outputs
+# (root-level only — do NOT match dashboard/app/api/personas/)
+/personas/
+# SQLite DB (contains captions, metrics, prompts, credit ledger)
+/db/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+# Runtime logs (may contain data)
+/logs/
+/temp/
+/tmp/
+
+# ===== Dependencies & build =====
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# ===== OS / editor =====
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# ===== Misc =====
+*.log
+.cache/
