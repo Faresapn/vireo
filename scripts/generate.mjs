@@ -36,7 +36,14 @@ const ENGINES = {
     endpoint: "https://api.higgsfield.ai/bytedance/seedance-2.0/reference-to-video",
     body: (refUrl, imageUrls, prompt, resolution, dur) => ({
       video_urls: [refUrl], image_urls: imageUrls, prompt, resolution,
-      aspect_ratio: "9:16", duration: dur,
+      aspect_ratio: "9:16", duration: Math.min(dur, 15),
+    }),
+  },
+  "seedance-2.5": {
+    endpoint: "https://api.higgsfield.ai/bytedance/seedance-2.5/reference-to-video",
+    body: (refUrl, imageUrls, prompt, resolution, dur) => ({
+      video_urls: [refUrl], image_urls: imageUrls, prompt, resolution,
+      aspect_ratio: "9:16", duration: Math.min(dur, 30),
     }),
   },
 };
@@ -120,7 +127,7 @@ async function main() {
     imageUrls.push(r2Upload(cl, rn)); uploaded.push(rn);
   });
 
-  const dur = Math.min(Math.max(Math.round(video.duration_s || 5), 4), 15);
+  const dur = Math.min(Math.max(Math.round(video.duration_s || 5), 4), 30);
   console.error(`[${engine}] submit ${resolution}${engine === "seedance" ? ` 9:16 ${dur}s` : ""}…`);
   const sub = await hfSubmit(ENGINES[engine].endpoint, ENGINES[engine].body(refUrl, imageUrls, prompt, resolution, dur));
   if (!sub.request_id) { console.error("submit failed:", JSON.stringify(sub).slice(0, 200)); uploaded.forEach(r2Delete); process.exit(1); }

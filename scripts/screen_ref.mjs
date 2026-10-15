@@ -87,6 +87,19 @@ async function main() {
   const refPath = path.join(PERSONAS_DIR, personaId, v.local_ref);
   if (!fs.existsSync(refPath)) { console.error("ref missing"); process.exit(1); }
 
+  // Hard duration gate: refs >30s can't fit any engine (Genjutsu trims to 30,
+  // Seedance 2.5 max 30) — reject before spending a vision call.
+  const durS = parseFloat(
+    execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", refPath], { encoding: "utf8" }).trim()
+  ) || 0;
+  if (durS > 30) {
+    const result = { score: 0, verdict: "bad", reason: `Too long (${durS.toFixed(0)}s > 30s engine limit)` };
+    db.prepare("UPDATE videos SET ref_score=?, ref_notes=?, updated_at=datetime('now') WHERE id=?")
+      .run(result.score, `${result.verdict}: ${result.reason}`, videoId);
+    console.log(JSON.stringify(result));
+    return;
+  }
+
   const fr = frames(refPath);
   let result;
   try { result = await call(fr); } finally { fr.forEach((f) => { try { fs.unlinkSync(f); } catch {} }); }

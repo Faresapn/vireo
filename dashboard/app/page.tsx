@@ -1070,10 +1070,19 @@ function AddNicheModal({
 }) {
   const [name, setName] = useState("");
   const [niche, setNiche] = useState("");
+  const [cluster, setCluster] = useState("");
+  const [clusters, setClusters] = useState<any[]>([]);
   const [platform, setPlatform] = useState("instagram");
   const [aspect, setAspect] = useState("9:16");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/clusters", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setClusters(d.clusters || []))
+      .catch(() => {});
+  }, []);
 
   async function create() {
     if (!name.trim() || !niche.trim()) {
@@ -1085,7 +1094,7 @@ function AddNicheModal({
     const r = await fetch("/api/personas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, niche, platform, aspect }),
+      body: JSON.stringify({ name, niche, platform, aspect, viral_cluster_slug: cluster || null }),
     });
     const data = await r.json();
     setBusy(false);
@@ -1119,6 +1128,27 @@ function AddNicheModal({
               placeholder="Kepin Animal"
               className="input"
             />
+          </Field>
+          <Field label="Kategori viral (ViralEngine cluster)">
+            <select
+              value={cluster}
+              onChange={(e) => {
+                const slug = e.target.value;
+                setCluster(slug);
+                // auto-fill niche from the cluster's base word if empty
+                if (slug && !niche.trim()) {
+                  setNiche(slug.split("-")[0]);
+                }
+              }}
+              className="input"
+            >
+              <option value="">— pilih kategori —</option>
+              {clusters.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.name}{c.total ? ` (${c.total})` : ""}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Niche">
             <input

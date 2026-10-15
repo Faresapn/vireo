@@ -34,12 +34,23 @@ function run(script, args, timeoutMs = 780000) {
 // predator keywords -> force seedance (genjutsu NSFW-flags big predators)
 const PREDATOR = /lion|tiger|singa|harimau|bear|beruang|wolf|serigala|leopard|cheetah|panther|jaguar/i;
 
-function pickEngine(db, niche, caption) {
-  if (PREDATOR.test(caption || "")) return "seedance";
-  // RAG best engine for this niche
+// Engine pick, duration-aware:
+//  - ref > 15s  -> MUST use a 30s-capable engine. Seedance 2.0 caps at 15s (truncates),
+//    so for long refs use seedance-2.5 (predator) or genjutsu (non-predator, also 30s).
+//  - ref <= 15s -> seedance 2.0 (cheaper) for predator, else RAG best / seedance.
+function pickEngine(db, niche, caption, durationS) {
+  const isPredator = PREDATOR.test(caption || "");
+  const isLong = (durationS || 0) > 15;
+
+  if (isLong) {
+    // long ref: never Seedance 2.0 (would truncate to 15s)
+    return isPredator ? "seedance-2.5" : "genjutsu";
+  }
+  if (isPredator) return "seedance";
+  // RAG best engine for this niche (short refs only)
   const row = db.prepare(
     `SELECT engine, SUM(CASE WHEN verdict='ok' THEN 1 ELSE 0 END)*1.0/COUNT(*) AS rate, COUNT(*) n
-     FROM decisions WHERE niche=? AND engine IS NOT NULL GROUP BY engine ORDER BY rate DESC, n DESC LIMIT 1`
+     FROM decisions WHERE niche=? AND engine IS NOT NULL AND engine!='seedance-2.5' GROUP BY engine ORDER BY rate DESC, n DESC LIMIT 1`
   ).get(niche);
   return row?.engine || "seedance";
 }
@@ -135,13 +146,13 @@ async function main() {
       try { run("build_prompt.mjs", instr ? [personaId, String(ref.id), instr] : [personaId, String(ref.id)], 120000); }
       catch (e) { console.error("build_prompt gagal:", e.message); continue; }
 
-      // 4. pick engine
-      const engine = pickEngine(db, niche, ref.caption);
-      console.error(`Engine: ${engine}`);
+      // 4. pick engine (duration-aware: ref >15s forces a 30s-capable engine)
+      const engine = pickEngine(db, niche, ref.caption, ref.duration_s);
+      console.error(`Engine: ${engine} (ref ${ref.duration_s?.toFixed(0)}s)`);
 
-      // 5. resolution via RAG
+      // 5. resolution — draft 480p while RAG unsure; final = 720p (per Branko, no 1080p)
       const rag = ragAutoDone(db, niche);
-      const resolution = rag.auto ? "1080p" : "480p";
+      const resolution = rag.auto ? "720p" : "480p";
       console.error(`Resolution: ${resolution} (RAG first-try ${(rag.rate * 100).toFixed(0)}%, ${rag.samples} samples)`);
 
       // 6. generate
