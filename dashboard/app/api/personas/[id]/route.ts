@@ -30,6 +30,9 @@ export async function PATCH(
     "aspect",
     "master_prompt",
     "viral_source",
+    "viral_cluster_slug",
+    "auto_engine",
+    "auto_instruction",
     "archived",
   ];
   const sets: string[] = [];

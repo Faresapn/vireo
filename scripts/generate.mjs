@@ -25,6 +25,18 @@ const DB_PATH = path.join(STUDIO_ROOT, "db", "studio.db");
 const PERSONAS_DIR = path.join(STUDIO_ROOT, "personas");
 const HF_KEY = fs.readFileSync(path.join(os.homedir(), ".higgsfield_key"), "utf8").trim();
 
+// Load local, git-ignored config (.env.local) for the R2 transit host etc.
+// The repo ships only placeholder values; real CDN/bucket live here, never committed.
+try {
+  const envPath = path.join(STUDIO_ROOT, ".env.local");
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
+    }
+  }
+} catch {}
+
 const ENGINES = {
   genjutsu: {
     endpoint: "https://api.higgsfield.ai/higgsfield/genjutsu/motion-transfer/v1.0",
@@ -44,6 +56,27 @@ const ENGINES = {
     body: (refUrl, imageUrls, prompt, resolution, dur) => ({
       video_urls: [refUrl], image_urls: imageUrls, prompt, resolution,
       aspect_ratio: "9:16", duration: Math.min(dur, 30),
+    }),
+  },
+  // Wan 3.0 — cheaper, and (unlike 2.6) DOES support image_urls for character lock.
+  // reference-to-video: video_urls (motion ref) + image_urls (char photos) + prompt.
+  // duration 2-30s, resolution 480/720/1080 (we lock 720p). Good cheap 3rd option.
+  wan: {
+    endpoint: "https://api.higgsfield.ai/alibaba/wan-3.0/reference-to-video",
+    body: (refUrl, imageUrls, prompt, resolution, dur) => ({
+      video_urls: [refUrl], image_urls: imageUrls, prompt,
+      resolution: resolution === "480p" ? "480p" : "720p",
+      aspect_ratio: "9:16", duration: Math.min(Math.max(dur, 2), 30),
+    }),
+  },
+  // Wan 3.0 Prime — higher quality than base Wan 3.0 (less slop), still cheaper
+  // than Seedance/Genjutsu. Same schema (image_urls char-lock, 2-30s, 480/720/1080).
+  "wan-prime": {
+    endpoint: "https://api.higgsfield.ai/alibaba/wan-3.0-prime/reference-to-video",
+    body: (refUrl, imageUrls, prompt, resolution, dur) => ({
+      video_urls: [refUrl], image_urls: imageUrls, prompt,
+      resolution: resolution === "480p" ? "480p" : "720p",
+      aspect_ratio: "9:16", duration: Math.min(Math.max(dur, 2), 30),
     }),
   },
 };
@@ -105,8 +138,15 @@ async function main() {
   const video = db.prepare("SELECT * FROM videos WHERE id=? AND persona_id=?").get(videoId, personaId);
   if (!persona || !video) { console.error("persona/video not found"); process.exit(1); }
 
-  const prompt = (video.prompt_used || "").trim()
-    || "The scene follows the exact same sequence as the reference video, matching every movement frame-for-frame, replacing the main person with the reference character while keeping the original motion, setting, timing and energy unchanged.";
+  // Prompt priority: a REAL vision-authored prompt > persona.master_prompt
+  // (locked character template) > generic fallback. We treat a previously-saved
+  // GENERIC fallback in prompt_used as empty, so it never shadows master_prompt
+  // (that bug made a manual generate keep producing a generic character).
+  const GENERIC = "The scene follows the exact same sequence as the reference video, matching every movement frame-for-frame, replacing the main person with the reference character while keeping the original motion, setting, timing and energy unchanged.";
+  const savedPrompt = (video.prompt_used || "").trim();
+  const prompt = (savedPrompt && savedPrompt !== GENERIC ? savedPrompt : "")
+    || (persona.master_prompt || "").trim()
+    || GENERIC;
 
   const chars = db.prepare("SELECT rel_path FROM character_images WHERE persona_id=? ORDER BY ord ASC, id ASC").all(personaId);
   if (!chars.length) { console.error("no character images"); process.exit(1); }
@@ -128,8 +168,13 @@ async function main() {
   });
 
   const dur = Math.min(Math.max(Math.round(video.duration_s || 5), 4), 30);
-  console.error(`[${engine}] submit ${resolution}${engine === "seedance" ? ` 9:16 ${dur}s` : ""}…`);
-  const sub = await hfSubmit(ENGINES[engine].endpoint, ENGINES[engine].body(refUrl, imageUrls, prompt, resolution, dur));
+  // "seedance" auto-routes to 2.5 when the ref is >15s (2.0 caps at 15s and truncates).
+  // The dashboard only shows one "Seedance" option; the duration split is internal.
+  let effEngine = engine;
+  if (engine === "seedance" && dur > 15) effEngine = "seedance-2.5";
+  const isSeedance = effEngine === "seedance" || effEngine === "seedance-2.5";
+  console.error(`[${effEngine}] submit ${resolution}${isSeedance || effEngine.startsWith("wan") ? ` 9:16 ${dur}s` : ""}…`);
+  const sub = await hfSubmit(ENGINES[effEngine].endpoint, ENGINES[effEngine].body(refUrl, imageUrls, prompt, resolution, dur));
   if (!sub.request_id) { console.error("submit failed:", JSON.stringify(sub).slice(0, 200)); uploaded.forEach(r2Delete); process.exit(1); }
 
   let result;
@@ -157,7 +202,8 @@ async function main() {
   const buf = Buffer.from(await (await fetch(outUrl)).arrayBuffer());
   fs.writeFileSync(path.join(outDir, outName), buf);
 
-  const col = resolution === "1080p" ? "output_1080" : "output_480";
+  // 480p → output_480; anything higher (720p/1080p) → output_1080 slot (the hi-res pointer).
+  const col = resolution === "480p" ? "output_480" : "output_1080";
   db.prepare(`UPDATE videos SET ${col}=?, prompt_used=?, hf_request_id=?, stage='qc', updated_at=datetime('now') WHERE id=?`)
     .run(path.join("output", resolution, outName), prompt, sub.request_id, videoId);
 

@@ -1,9 +1,24 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { Space_Grotesk, Inter, Geist_Mono } from "next/font/google";
+
+const display = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-display",
+});
+const sans = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+const mono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
-  title: "Higgsfield Studio",
-  description: "Auto video generation pipeline — per-persona motion transfer",
+  title: "Vireo Studio",
+  description: "Autonomous viral video studio — per-persona motion transfer",
 };
 
 export default function RootLayout({
@@ -12,8 +27,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id">
-      <body className="min-h-screen bg-void text-ink font-sans antialiased">
+    <html lang="id" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
+      <body className="min-h-screen bg-void text-ink antialiased">
         {children}
       </body>
     </html>

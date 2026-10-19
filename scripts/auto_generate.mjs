@@ -146,9 +146,11 @@ async function main() {
       try { run("build_prompt.mjs", instr ? [personaId, String(ref.id), instr] : [personaId, String(ref.id)], 120000); }
       catch (e) { console.error("build_prompt gagal:", e.message); continue; }
 
-      // 4. pick engine (duration-aware: ref >15s forces a 30s-capable engine)
-      const engine = pickEngine(db, niche, ref.caption, ref.duration_s);
-      console.error(`Engine: ${engine} (ref ${ref.duration_s?.toFixed(0)}s)`);
+      // 4. pick engine — HYBRID: if persona.auto_engine is locked, use it;
+      // else auto-pick (duration-aware: ref >15s forces a 30s-capable engine).
+      const locked = (persona.auto_engine || "").trim();
+      const engine = locked || pickEngine(db, niche, ref.caption, ref.duration_s);
+      console.error(`Engine: ${engine}${locked ? " (locked)" : " (auto)"} (ref ${ref.duration_s?.toFixed(0)}s)`);
 
       // 5. resolution — draft 480p while RAG unsure; final = 720p (per Branko, no 1080p)
       const rag = ragAutoDone(db, niche);

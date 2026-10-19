@@ -17,7 +17,8 @@ export async function POST(
   const { id } = await params;
   const body = await req.json();
   const videoId = body.video_id;
-  const engine = body.engine === "genjutsu" ? "genjutsu" : "seedance";
+  const VALID_ENGINES = ["genjutsu", "seedance", "seedance-2.5", "wan", "wan-prime"];
+  const engine = VALID_ENGINES.includes(body.engine) ? body.engine : "seedance";
   const resolution = ["480p", "720p", "1080p"].includes(body.resolution) ? body.resolution : "480p";
 
   if (!videoId) return NextResponse.json({ error: "video_id wajib" }, { status: 400 });

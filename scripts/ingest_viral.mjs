@@ -124,14 +124,34 @@ async function main() {
     process.exit(1);
   }
 
-  console.error(`Persona: ${persona.name} | cluster: ${slug} | limit: ${limit}`);
-  const parsed = await mcpCall("list_instagram_signals", {
+  // Auto-offset: MCP returns the same top-N by velocity every call, so without
+  // paging a 2nd ingest just re-fetches already-seen shortcodes (all dedup-skipped
+  // → "data gak berubah"). Advance the offset past how many we've already pulled
+  // for this cluster, so each ingest reaches fresh items. Explicit arg overrides.
+  const argOffset = process.argv[4] != null ? parseInt(process.argv[4], 10) : null;
+  let offset = argOffset;
+  if (offset == null) {
+    const seen = db.prepare(
+      "SELECT COUNT(*) AS n FROM videos WHERE persona_id=?"
+    ).get(personaId);
+    offset = seen?.n || 0;
+  }
+  console.error(`Persona: ${persona.name} | cluster: ${slug} | limit: ${limit} | offset: ${offset}`);
+  let parsed = await mcpCall("list_instagram_signals", {
     cluster: slug,
     order: "velocity",
     limit,
+    offset,
   });
-  const sc = structured(parsed);
-  const cluster = sc?.clusters?.[0];
+  let sc = structured(parsed);
+  let cluster = sc?.clusters?.[0];
+  // If the offset ran past the end (no items), wrap back to 0 once.
+  if (cluster && (!cluster.items || cluster.items.length === 0) && offset > 0) {
+    console.error("offset past end, wrapping to 0…");
+    parsed = await mcpCall("list_instagram_signals", { cluster: slug, order: "velocity", limit, offset: 0 });
+    sc = structured(parsed);
+    cluster = sc?.clusters?.[0];
+  }
   if (!cluster) {
     console.error("No cluster data:", JSON.stringify(sc).slice(0, 300));
     process.exit(1);
@@ -169,8 +189,8 @@ async function main() {
 
   const ins = db.prepare(`
     INSERT INTO videos
-      (persona_id, stage, source_url, local_ref, duration_s, shortcode, views, views_per_hour, caption, creator)
-    VALUES (?, 'inbox', ?, ?, ?, ?, ?, ?, ?, ?)
+      (persona_id, stage, source_url, local_ref, duration_s, shortcode, views, views_per_hour, caption, creator, ingested_at)
+    VALUES (?, 'inbox', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `);
 
   let added = 0, skipped = 0, failed = 0;
