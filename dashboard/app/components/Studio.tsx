@@ -14,6 +14,8 @@ type Persona = {
   viral_source: string | null;
   viral_cluster_slug?: string | null;
   auto_engine?: string | null;
+  char_mode?: string | null;
+  audio_mode?: string | null;
   archived: number;
   cnt_inbox: number;
   cnt_shortlist: number;
@@ -61,6 +63,19 @@ export default function Studio({ activeIdProp }: { activeIdProp?: string | null 
       router.push(`/niche/${id}`);
     },
     [router]
+  );
+
+  const deletePersona = useCallback(
+    async (p: Persona) => {
+      if (!confirm(`Hapus persona "${p.name}"? Video + referensi di dashboard ikut terhapus (file di disk tetap aman).`)) return;
+      await fetch(`/api/personas/${p.id}`, { method: "DELETE" });
+      if (activeId === p.id) {
+        setActiveId(null);
+        router.push("/");
+      }
+      await load();
+    },
+    [activeId, router, load]
   );
 
   const active = personas.find((p) => p.id === activeId) || null;
@@ -127,10 +142,10 @@ export default function Studio({ activeIdProp }: { activeIdProp?: string | null 
           )}
           {visiblePersonas
             .map((p) => (
-              <button
+              <div
                 key={p.id}
                 onClick={() => selectPersona(p.id)}
-                className={`group relative mb-1 flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all duration-200 ${
+                className={`group relative mb-1 flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all duration-200 ${
                   activeId === p.id
                     ? "bg-raise"
                     : "hover:bg-raise/50"
@@ -148,8 +163,18 @@ export default function Studio({ activeIdProp }: { activeIdProp?: string | null 
                     {p.niche}
                   </div>
                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deletePersona(p);
+                  }}
+                  title="Hapus persona"
+                  className="shrink-0 rounded-md p-1 text-faint opacity-0 transition hover:bg-bad/15 hover:text-bad group-hover:opacity-100"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </button>
                 <ReadyDot persona={p} />
-              </button>
+              </div>
             ))}
         </nav>
 
@@ -517,6 +542,9 @@ function SetupPanel({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <CharacterCard persona={persona} onChange={onChange} />
       <MasterPromptCard persona={persona} onChange={onChange} />
+      {(persona.audio_mode || "auto") === "ref" && (
+        <VoiceCard persona={persona} onChange={onChange} />
+      )}
     </div>
   );
 }
@@ -529,10 +557,11 @@ function CharacterCard({
   onChange: () => void;
 }) {
   const [imgs, setImgs] = useState<
-    { id: number; rel_path: string; width: number; height: number }[]
+    { id: number; rel_path: string; width: number; height: number; char_group?: number }[]
   >([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const isDuo = (persona.char_mode || "single") === "duo";
 
   const loadImgs = useCallback(async () => {
     const r = await fetch(`/api/personas/${persona.id}/character`, {
@@ -545,11 +574,12 @@ function CharacterCard({
     loadImgs();
   }, [loadImgs]);
 
-  async function upload(file: File) {
+  async function upload(file: File, group: number = 1) {
     setBusy(true);
     setMsg(null);
     const fd = new FormData();
     fd.append("file", file);
+    fd.append("char_group", String(group));
     const r = await fetch(`/api/personas/${persona.id}/character`, {
       method: "POST",
       body: fd,
@@ -580,68 +610,137 @@ function CharacterCard({
 
   const full = imgs.length >= 8;
 
+  // one photo tile
+  const Tile = ({ im }: { im: typeof imgs[number] }) => (
+    <div className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-edge bg-void">
+      <img src={`/api/media/${persona.id}/${im.rel_path}?t=${im.id}`} alt="" className="h-full w-full object-cover" />
+      <button
+        onClick={() => remove(im.id)}
+        disabled={busy}
+        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded bg-black/70 text-xs text-bad opacity-0 transition group-hover:opacity-100 hover:bg-black"
+        title="Hapus"
+      >×</button>
+      {im.width > 0 && im.width < 768 && (
+        <span className="absolute bottom-0 left-0 right-0 bg-warn/20 px-1 py-0.5 text-center text-[8px] text-warn">{im.width}px low</span>
+      )}
+    </div>
+  );
+
+  // add-photo tile for a given group
+  const AddTile = ({ group }: { group: number }) => (
+    <label className="flex aspect-[3/4] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-edge text-mute transition hover:border-accent/50 hover:text-accent">
+      <span className="text-xl leading-none">+</span>
+      <span className="text-[10px]">{busy ? "…" : "tambah"}</span>
+      <input type="file" accept="image/*" className="hidden" disabled={busy}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f, group); e.target.value = ""; }} />
+    </label>
+  );
+
+  const g1 = imgs.filter((im) => (im.char_group || 1) === 1);
+  const g2 = imgs.filter((im) => (im.char_group || 1) === 2);
+
   return (
     <Card
       title="CHARACTER LOCK"
-      hint="Foto karakter (1–8) — dikirim sebagai image_urls di Genjutsu"
+      hint={isDuo ? "2 karakter (duo) — tiap grup = 1 orang, dikirim sbg image_urls" : "Foto karakter (1–8) — dikirim sebagai image_urls"}
     >
-      <div className="grid grid-cols-4 gap-2.5">
-        {imgs.map((im, i) => (
-          <div
-            key={im.id}
-            className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-edge bg-void"
-          >
-            <img
-              src={`/api/media/${persona.id}/${im.rel_path}?t=${im.id}`}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-            {i === 0 && (
-              <span className="absolute left-1 top-1 rounded bg-accent/90 text-[#241a07] px-1.5 py-0.5 text-[9px] font-medium text-white">
-                avatar
-              </span>
-            )}
-            <button
-              onClick={() => remove(im.id)}
-              disabled={busy}
-              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded bg-black/70 text-xs text-bad opacity-0 transition group-hover:opacity-100 hover:bg-black"
-              title="Hapus"
-            >
-              ×
-            </button>
-            {im.width > 0 && im.width < 768 && (
-              <span className="absolute bottom-0 left-0 right-0 bg-warn/20 px-1 py-0.5 text-center text-[8px] text-warn">
-                {im.width}px low
-              </span>
-            )}
+      {!isDuo ? (
+        <div className="grid grid-cols-4 gap-2.5">
+          {imgs.map((im) => <Tile key={im.id} im={im} />)}
+          {!full && <AddTile group={1} />}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <div className="mb-1.5 eyebrow text-accent-soft">👤 Karakter 1 (kiri)</div>
+            <div className="grid grid-cols-4 gap-2.5">
+              {g1.map((im) => <Tile key={im.id} im={im} />)}
+              {!full && <AddTile group={1} />}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1.5 eyebrow text-accent-soft">👥 Karakter 2 (kanan)</div>
+            <div className="grid grid-cols-4 gap-2.5">
+              {g2.map((im) => <Tile key={im.id} im={im} />)}
+              {!full && <AddTile group={2} />}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-3 text-[11px] leading-relaxed text-mute">
+        Wajah frontal, tajam, ≥1024px. {isDuo
+          ? "Tiap karakter punya grup foto sendiri. Master prompt harus describe KARAKTER 1 (kiri) + KARAKTER 2 (kanan) + posisi."
+          : "Multi-foto (angle/ekspresi beda) bikin lock lebih kuat. Foto pertama = avatar."}
+      </p>
+      {msg && <div className="mt-2 text-[11px] text-mute">{msg}</div>}
+    </Card>
+  );
+}
+
+function VoiceCard({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  const [voices, setVoices] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const isDuo = (persona.char_mode || "single") === "duo";
+  const maxVoices = 3;
+
+  const load = useCallback(async () => {
+    const r = await fetch(`/api/personas/${persona.id}/audio`, { cache: "no-store" });
+    const d = await r.json();
+    setVoices(d.voices || []);
+  }, [persona.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function upload(file: File) {
+    setBusy(true); setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch(`/api/personas/${persona.id}/audio`, { method: "POST", body: fd });
+    const d = await r.json();
+    setBusy(false);
+    if (d.error) setMsg("Error: " + d.error);
+    else { setMsg("✓ suara ter-upload"); await load(); onChange(); }
+  }
+
+  async function removeAt(idx: number) {
+    setBusy(true);
+    await fetch(`/api/personas/${persona.id}/audio?idx=${idx + 1}`, { method: "DELETE" });
+    setBusy(false);
+    await load(); onChange();
+  }
+
+  return (
+    <Card title="REFERENCE SUARA" hint={`Audio acuan (≤30s, maks ${maxVoices}) — Seedance 2.5 audio_urls`}>
+      <div className="space-y-2">
+        {voices.map((v, i) => (
+          <div key={i} className="flex items-center gap-2.5 rounded-lg border border-edge bg-void px-2.5 py-2">
+            <span className="chip shrink-0 text-accent-soft">voice {i + 1}</span>
+            <audio src={`/api/media/${persona.id}/${v}?t=${i}`} controls className="h-8 flex-1" />
+            <button onClick={() => removeAt(i)} disabled={busy} className="shrink-0 text-[11px] text-bad hover:underline">hapus</button>
           </div>
         ))}
-
-        {!full && (
-          <label className="flex aspect-[3/4] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-edge text-mute transition hover:border-accent/50 hover:text-accent">
-            <span className="text-xl leading-none">+</span>
-            <span className="text-[10px]">
-              {busy ? "…" : "tambah"}
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={busy}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) upload(f);
-                e.target.value = "";
-              }}
-            />
+        {voices.length < maxVoices && (
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-edge py-3 text-mute transition hover:border-accent/50 hover:text-accent">
+            <span className="text-lg leading-none">🎙️</span>
+            <span className="text-[11px]">{busy ? "Upload…" : `tambah suara (voice ${voices.length + 1})`}</span>
+            <input type="file" accept="audio/*" className="hidden" disabled={busy}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
           </label>
         )}
       </div>
-
       <p className="mt-3 text-[11px] leading-relaxed text-mute">
-        Wajah frontal, tajam, ≥1024px. Multi-foto (angle/ekspresi beda) bikin
-        lock lebih kuat. Foto pertama = avatar. Harus konsisten sama deskripsi
-        karakter di master prompt.
+        {isDuo
+          ? "Upload voice 1 + voice 2. Di master prompt tulis siapa pakai suara mana (mis. \"Karakter 1 bicara dengan voice 1\")."
+          : "Suara/musik/voice acuan (maks 30 detik/file)."}{" "}
+        <span className="text-faint">Catatan: Seedance pakai ini sebagai referensi — mapping per-karakter diarahkan lewat master prompt, gak dijamin presisi.</span>
       </p>
       {msg && <div className="mt-2 text-[11px] text-mute">{msg}</div>}
     </Card>
@@ -877,16 +976,16 @@ function PipelineBoard({ persona, view = "pipeline" }: { persona: Persona; view?
 
   const [genMsg, setGenMsg] = useState<string | null>(null);
 
-  async function generate(v: Video, engine: string, resolution: string = "480p") {
+  async function generate(v: Video, engine: string, resolution: string = "480p", story: boolean = false, variation: string = "") {
     setGenMsg(null);
     const r = await fetch(`/api/personas/${persona.id}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ video_id: v.id, engine, resolution }),
+      body: JSON.stringify({ video_id: v.id, engine, resolution, story, variation }),
     });
     const d = await r.json();
     if (d.error) setGenMsg("✗ " + (d.detail || d.error).slice(0, 120));
-    else setGenMsg(`⚡ ${engine} ${resolution} jalan di background…`);
+    else setGenMsg(`⚡ ${engine} ${resolution}${story ? " (story)" : ""} jalan di background…`);
     await load();
   }
 
@@ -1072,11 +1171,13 @@ function PipelineRow({
   personaId: string;
   onMove: (v: Video, stage: string) => void;
   onDelete: (v: Video) => void;
-  onGenerate: (v: Video, engine: string, resolution: string) => void;
+  onGenerate: (v: Video, engine: string, resolution: string, story?: boolean, variation?: string) => void;
   genBusy?: boolean;
 }) {
   const [engine, setEngine] = useState("seedance");
   const [resolution, setResolution] = useState("480p");
+  const [story, setStory] = useState(false);
+  const [variation, setVariation] = useState("");
   const stageIdx = ROW_STAGES.findIndex((s) => s.key === v.stage);
   const refSrc = v.local_ref ? `/api/media/${personaId}/${v.local_ref}` : null;
   const outRel = v.output_1080 || v.output_480;
@@ -1113,6 +1214,22 @@ function PipelineRow({
   // aksi di bawah REFERENSI (generate) — hanya saat shortlist
   const refAction = v.stage === "shortlist" ? (
     <>
+      {/* mode: ikut ref vs story baru */}
+      <div className="flex gap-1">
+        <button onClick={() => setStory(false)} disabled={genBusy}
+          className={`flex-1 rounded border px-1 py-1 text-[9px] transition ${!story ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-faint"}`}>
+          🎬 Ikut Ref
+        </button>
+        <button onClick={() => setStory(true)} disabled={genBusy}
+          className={`flex-1 rounded border px-1 py-1 text-[9px] transition ${story ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-faint"}`}>
+          ✨ Story Baru
+        </button>
+      </div>
+      {story && (
+        <input value={variation} onChange={(e) => setVariation(e.target.value)} disabled={genBusy}
+          placeholder="variasi: mis. ayam→bebek (opsional)"
+          className="w-full rounded border border-edge bg-void px-1.5 py-1 text-[9px] text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none" />
+      )}
       <div className="flex gap-1">
         <select value={engine} onChange={(e) => setEngine(e.target.value)} disabled={genBusy}
           className="flex-1 rounded border border-edge bg-void px-1 py-1 text-[9px] text-ink focus:border-accent/50 focus:outline-none">
@@ -1126,9 +1243,9 @@ function PipelineRow({
           <option value="720p">720p</option>
         </select>
       </div>
-      <button onClick={() => onGenerate(v, engine, resolution)} disabled={genBusy}
+      <button onClick={() => onGenerate(v, engine, resolution, story, variation)} disabled={genBusy}
         className="btn btn-primary w-full px-2 py-1 text-[9px] disabled:opacity-40">
-        {genBusy ? "Generating…" : `⚡ Generate ${resolution}`}
+        {genBusy ? "Generating…" : `⚡ Generate ${resolution}${story ? " (story)" : ""}`}
       </button>
       <button onClick={() => onMove(v, "inbox")} className="text-[9px] text-faint hover:text-mute">↩ inbox</button>
     </>
@@ -1214,6 +1331,8 @@ function AddNicheModal({
   const [clusters, setClusters] = useState<any[]>([]);
   const [platform, setPlatform] = useState("instagram");
   const [aspect, setAspect] = useState("9:16");
+  const [charMode, setCharMode] = useState("single");
+  const [audioMode, setAudioMode] = useState("auto");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1234,7 +1353,7 @@ function AddNicheModal({
     const r = await fetch("/api/personas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, niche, platform, aspect, viral_cluster_slug: cluster || null }),
+      body: JSON.stringify({ name, niche, platform, aspect, char_mode: charMode, audio_mode: audioMode, viral_cluster_slug: cluster || null }),
     });
     const data = await r.json();
     setBusy(false);
@@ -1326,6 +1445,47 @@ function AddNicheModal({
               </select>
             </Field>
           </div>
+
+          <Field label="Tipe karakter">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCharMode("single")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-left text-[12px] transition ${charMode === "single" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub hover:border-edge"}`}
+              >
+                <div className="font-medium">👤 Single</div>
+                <div className="text-[10px] text-mute">1 karakter</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCharMode("duo")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-left text-[12px] transition ${charMode === "duo" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub hover:border-edge"}`}
+              >
+                <div className="font-medium">👥 Duo</div>
+                <div className="text-[10px] text-mute">2 karakter</div>
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Suara (audio)">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setAudioMode("auto")}
+                className={`flex-1 rounded-lg border px-2 py-2 text-center text-[11px] transition ${audioMode === "auto" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub"}`}>
+                🔊 Auto<div className="text-[9px] text-mute">AI bikin suara</div>
+              </button>
+              <button type="button" onClick={() => setAudioMode("ref")}
+                className={`flex-1 rounded-lg border px-2 py-2 text-center text-[11px] transition ${audioMode === "ref" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub"}`}>
+                🎙️ Ref<div className="text-[9px] text-mute">upload suara</div>
+              </button>
+              <button type="button" onClick={() => setAudioMode("off")}
+                className={`flex-1 rounded-lg border px-2 py-2 text-center text-[11px] transition ${audioMode === "off" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub"}`}>
+                🔇 Bisu<div className="text-[9px] text-mute">tanpa suara</div>
+              </button>
+            </div>
+            {audioMode !== "off" && (
+              <p className="mt-1.5 text-[10px] text-accent-soft">⚡ pakai suara → otomatis engine Seedance 2.5</p>
+            )}
+          </Field>
         </div>
 
         {err && <div className="mt-4 text-[11px] text-bad">{err}</div>}

@@ -167,14 +167,50 @@ async function main() {
     imageUrls.push(r2Upload(cl, rn)); uploaded.push(rn);
   });
 
+  // Reference audio (only when audio_mode === "ref"): audio_ref is a JSON array
+  // of rel paths (legacy: single string). Upload each to R2 → audio_urls.
+  const audioUrls = [];
+  if ((persona.audio_mode || "auto") === "ref" && persona.audio_ref) {
+    let refs = [];
+    try { const v = JSON.parse(persona.audio_ref); refs = Array.isArray(v) ? v : [persona.audio_ref]; }
+    catch { refs = [persona.audio_ref]; }
+    refs.forEach((rel, i) => {
+      const af = path.join(PERSONAS_DIR, personaId, rel);
+      if (fs.existsSync(af)) {
+        const an = `${personaId}_voice${i + 1}_${stamp}${path.extname(af)}`;
+        audioUrls.push(r2Upload(af, an)); uploaded.push(an);
+      } else {
+        console.error(`audio ref missing: ${rel} (skip)`);
+      }
+    });
+    if (!audioUrls.length) console.error("audio_mode=ref but no valid files (fallback to generated audio)");
+  }
+
   const dur = Math.min(Math.max(Math.round(video.duration_s || 5), 4), 30);
-  // "seedance" auto-routes to 2.5 when the ref is >15s (2.0 caps at 15s and truncates).
-  // The dashboard only shows one "Seedance" option; the duration split is internal.
+
+  // Engine resolution:
+  //  - "seedance" auto-routes to 2.5 when ref >15s (2.0 caps at 15s + truncates).
+  //  - audio_mode != "off" FORCES seedance-2.5 (only engine with audio support).
+  const audioMode = persona.audio_mode || "auto";
   let effEngine = engine;
   if (engine === "seedance" && dur > 15) effEngine = "seedance-2.5";
+  if (audioMode !== "off" && effEngine !== "seedance-2.5") {
+    console.error(`audio=${audioMode} → force engine seedance-2.5 (only engine w/ audio)`);
+    effEngine = "seedance-2.5";
+  }
   const isSeedance = effEngine === "seedance" || effEngine === "seedance-2.5";
-  console.error(`[${effEngine}] submit ${resolution}${isSeedance || effEngine.startsWith("wan") ? ` 9:16 ${dur}s` : ""}…`);
-  const sub = await hfSubmit(ENGINES[effEngine].endpoint, ENGINES[effEngine].body(refUrl, imageUrls, prompt, resolution, dur));
+
+  // Build the request body, then layer audio options for seedance-2.5.
+  const body = ENGINES[effEngine].body(refUrl, imageUrls, prompt, resolution, dur);
+  if (effEngine === "seedance-2.5") {
+    body.generate_audio = audioMode !== "off";       // auto|ref => true, off => false
+    if (audioMode === "ref" && audioUrls.length) {
+      body.audio_urls = audioUrls;                     // reference audio (1-10, <=30s)
+    }
+  }
+
+  console.error(`[${effEngine}] submit ${resolution}${isSeedance || effEngine.startsWith("wan") ? ` 9:16 ${dur}s` : ""}${audioMode !== "off" && effEngine === "seedance-2.5" ? ` +audio(${audioMode})` : ""}…`);
+  const sub = await hfSubmit(ENGINES[effEngine].endpoint, body);
   if (!sub.request_id) { console.error("submit failed:", JSON.stringify(sub).slice(0, 200)); uploaded.forEach(r2Delete); process.exit(1); }
 
   let result;

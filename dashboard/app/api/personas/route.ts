@@ -62,8 +62,8 @@ export async function POST(req: NextRequest) {
 
   db()
     .prepare(
-      `INSERT INTO personas (id, name, niche, platform, aspect, viral_source, viral_cluster_slug)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO personas (id, name, niche, platform, aspect, viral_source, viral_cluster_slug, char_mode, audio_mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -72,7 +72,9 @@ export async function POST(req: NextRequest) {
       body.platform || "instagram",
       body.aspect || "9:16",
       body.viral_source || null,
-      body.viral_cluster_slug || null
+      body.viral_cluster_slug || null,
+      body.char_mode === "duo" ? "duo" : "single",
+      ["auto", "ref", "off"].includes(body.audio_mode) ? body.audio_mode : "auto"
     );
 
   const row = db().prepare("SELECT * FROM personas WHERE id=?").get(id);

@@ -41,13 +41,22 @@ function extractFrames(refPath) {
   return frames;
 }
 
-async function visionPrompt(frames, masterPrompt, niche, instruction) {
+async function visionPrompt(frames, masterPrompt, niche, instruction, storyMode = false) {
   const images = frames.map((f) => ({
     type: "image_url",
     image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(f).toString("base64")}` },
   }));
 
-  const sys = `You are a prompt engineer for AI video motion-transfer (Genjutsu/Seedance).
+  const sys = storyMode ? `You are a prompt engineer for AI video motion-transfer (Seedance/Genjutsu).
+You are given 3 frames (start/middle/end) of a VIRAL REFERENCE video, a MASTER PROMPT template for a locked character persona, and the niche.
+Your job: write ONE final prompt that KEEPS the reference's motion/energy/pacing, but tells a NEW VARIATION of the story (different content/object/subject) instead of copying the reference exactly.
+RULES:
+- Keep the locked character description EXACTLY as in the master prompt (appearance, glasses, count of characters). Never change the character's appearance.
+- Preserve the reference's MOTION and SEQUENCE OF ACTIONS (the body movement, timing, camera energy) — this is a motion-transfer, the movement must still match.
+- But VARY the content/subject/object per the instruction (e.g. reference cooks chicken → make it cook duck; same motions, different food). Swap the secondary subject/object/setting to the new variation.
+- If no explicit instruction is given, invent a tasteful, niche-appropriate variation that keeps the same motion.
+- End with the locking clauses (9:16, no text overlay, character stays consistent, keep original timing/energy).
+- Output ONLY the final prompt text, no preamble, no explanation.` : `You are a prompt engineer for AI video motion-transfer (Genjutsu/Seedance).
 You are given 3 frames (start/middle/end) of a VIRAL REFERENCE video, a MASTER PROMPT template for a locked character persona, and the niche.
 Your job: write ONE final prompt that makes the AI recreate the reference's EXACT motion/sequence, but with the locked character replacing the main person.
 RULES:
@@ -59,11 +68,11 @@ RULES:
 
   const userText = `NICHE: ${niche}
 
-MASTER PROMPT TEMPLATE (keep character locked, fill the [SLOTS]):
+MASTER PROMPT TEMPLATE (keep character locked${storyMode ? ", motion same, VARY the content" : ", fill the [SLOTS]"}):
 """
 ${masterPrompt}
 """
-${instruction ? `\nEXTRA INSTRUCTION (apply this, e.g. swap an object/animal): ${instruction}\n` : ""}
+${instruction ? `\n${storyMode ? "STORY VARIATION" : "EXTRA INSTRUCTION"} (apply this): ${instruction}\n` : ""}
 Here are the 3 reference frames (start, middle, end). Write the final prompt now.`;
 
   const payload = {
@@ -107,9 +116,11 @@ Here are the 3 reference frames (start, middle, end). Write the final prompt now
 
 async function main() {
   const [, , personaId, videoId, ...rest] = process.argv;
-  const instruction = rest.join(" ").trim();
+  // --story flag => variation mode (keep motion, vary content/story). Rest = extra instruction.
+  const storyMode = rest.includes("--story");
+  const instruction = rest.filter((x) => x !== "--story").join(" ").trim();
   if (!personaId || !videoId) {
-    console.error("Usage: node build_prompt.mjs <persona_id> <video_id> [extra_instruction]");
+    console.error("Usage: node build_prompt.mjs <persona_id> <video_id> [--story] [extra_instruction]");
     process.exit(2);
   }
   const db = new DatabaseSync(DB_PATH);
@@ -123,8 +134,8 @@ async function main() {
 
   console.error("Extracting frames…");
   const frames = extractFrames(refPath);
-  console.error(`Vision (${LLM_MODEL}) building prompt${instruction ? " + instruction" : ""}…`);
-  const prompt = await visionPrompt(frames, persona.master_prompt, persona.niche, instruction);
+  console.error(`Vision (${LLM_MODEL}) building prompt${storyMode ? " [STORY mode]" : ""}${instruction ? " + instruction" : ""}…`);
+  const prompt = await visionPrompt(frames, persona.master_prompt, persona.niche, instruction, storyMode);
   frames.forEach((f) => { try { fs.unlinkSync(f); } catch {} });
 
   if (!prompt || prompt.length < 50) { console.error("prompt too short / empty"); process.exit(1); }

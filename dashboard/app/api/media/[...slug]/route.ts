@@ -28,6 +28,11 @@ export async function GET(
     ".png": "image/png",
     ".webp": "image/webp",
     ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
     ".txt": "text/plain; charset=utf-8",
   };
   return new NextResponse(buf, {

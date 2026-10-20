@@ -54,12 +54,17 @@ export async function PATCH(
   return NextResponse.json(row);
 }
 
-// DELETE /api/personas/[id] -> remove (also cascades videos). Keeps files on disk.
+// DELETE /api/personas/[id] -> remove persona + its videos + character rows.
+// Files on disk (personas/<id>/) are left intact as a safety net.
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  db().prepare("DELETE FROM personas WHERE id=?").run(id);
+  const d = db();
+  d.prepare("DELETE FROM videos WHERE persona_id=?").run(id);
+  try { d.prepare("DELETE FROM character_images WHERE persona_id=?").run(id); } catch {}
+  try { d.prepare("DELETE FROM decisions WHERE niche=(SELECT niche FROM personas WHERE id=?)").run(id); } catch {}
+  d.prepare("DELETE FROM personas WHERE id=?").run(id);
   return NextResponse.json({ ok: true });
 }

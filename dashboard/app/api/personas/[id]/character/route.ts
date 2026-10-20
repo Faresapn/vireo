@@ -16,7 +16,7 @@ export async function GET(
   const { id } = await params;
   const rows = db()
     .prepare(
-      "SELECT id, rel_path, width, height, ord FROM character_images WHERE persona_id=? ORDER BY ord ASC, id ASC"
+      "SELECT id, rel_path, width, height, ord, char_group FROM character_images WHERE persona_id=? ORDER BY ord ASC, id ASC"
     )
     .all(id);
   return NextResponse.json(rows);
@@ -46,6 +46,8 @@ export async function POST(
   const form = await req.formData();
   const file = form.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "no file" }, { status: 400 });
+  // char_group: 1 or 2 (for duo personas). Defaults to 1.
+  const charGroup = (form.get("char_group") as string) === "2" ? 2 : 1;
 
   const buf = Buffer.from(await file.arrayBuffer());
   const ext = (path.extname(file.name) || ".jpg").toLowerCase();
@@ -79,9 +81,9 @@ export async function POST(
   const relPath = path.join("char", fname);
   db()
     .prepare(
-      "INSERT INTO character_images (persona_id, rel_path, width, height, ord) VALUES (?,?,?,?,?)"
+      "INSERT INTO character_images (persona_id, rel_path, width, height, ord, char_group) VALUES (?,?,?,?,?,?)"
     )
-    .run(id, relPath, width, height, count);
+    .run(id, relPath, width, height, count, charGroup);
 
   // keep personas.character_img pointing at the FIRST image (avatar)
   if (count === 0) {
