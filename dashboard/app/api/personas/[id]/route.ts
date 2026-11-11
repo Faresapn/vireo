@@ -33,6 +33,7 @@ export async function PATCH(
     "viral_cluster_slug",
     "auto_engine",
     "auto_instruction",
+    "daily_auto",
     "archived",
   ];
   const sets: string[] = [];

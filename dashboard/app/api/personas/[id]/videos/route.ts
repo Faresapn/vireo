@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, STUDIO_ROOT } from "@/lib/db";
+import { viaGo } from "@/lib/goBackend";
 import path from "path";
 import fs from "fs";
 import { spawn } from "child_process";
@@ -13,15 +14,27 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const go = await viaGo(req, `/api/personas/${encodeURIComponent(id)}/videos${req.nextUrl.search}`);
+  if (go) return go;
   const stage = req.nextUrl.searchParams.get("stage");
-  const where = stage ? "persona_id=? AND stage=?" : "persona_id=?";
-  const args = stage ? [id, stage] : [id];
+  const order = req.nextUrl.searchParams.get("order"); // 'velocity' | 'date' | null
+  const conds = ["persona_id=?"];
+  const args: any[] = [id];
+  if (stage) { conds.push("stage=?"); args.push(stage); }
+  // Sort-toggle filter (only meaningful on the inbox/Pilih-Ref grid): show refs
+  // pulled with this order, PLUS legacy/manual ones (ingest_order NULL) so nothing
+  // ever disappears.
+  if (order === "velocity" || order === "date") {
+    conds.push("(ingest_order=? OR ingest_order IS NULL)");
+    args.push(order);
+  }
+  const where = conds.join(" AND ");
   const rows = db()
     .prepare(
       `SELECT id, stage, source_url, local_ref, duration_s, face_count, cut_count,
               ref_score, ref_notes, shortcode, views, views_per_hour, caption, creator,
-              prompt_used, hf_request_id, output_480, output_1080, qc_status, qc_notes,
-              gen_engine, gen_error, gen_started_at, created_at
+              prompt_used, idea_summary, master_prompt, hf_request_id, output_480, output_1080, qc_status, qc_notes,
+              gen_engine, gen_error, gen_started_at, ingest_order, created_at
        FROM videos WHERE ${where}
        ORDER BY COALESCE(views_per_hour,0) DESC, id DESC`
     )
@@ -40,7 +53,7 @@ export async function PATCH(
   const vid = body.video_id;
   if (!vid) return NextResponse.json({ error: "video_id wajib" }, { status: 400 });
 
-  const allowed = ["stage", "qc_status", "qc_notes", "ref_score", "ref_notes"];
+  const allowed = ["stage", "qc_status", "qc_notes", "ref_score", "ref_notes", "master_prompt", "prompt_used", "idea_summary"];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const k of allowed) {

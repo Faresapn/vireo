@@ -1,0 +1,50 @@
+name: backend-go
+
+on:
+  push:
+    paths: ["backend-go/**", ".github/workflows/backend-go.yml"]
+  pull_request:
+    paths: ["backend-go/**", ".github/workflows/backend-go.yml"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend-go
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+      - run: go vet ./...
+      - run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - run: go tool cover -func=coverage.out | tail -1
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          working-directory: backend-go
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

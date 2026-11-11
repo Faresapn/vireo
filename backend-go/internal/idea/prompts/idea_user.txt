@@ -1,0 +1,8 @@
+NICHE: {{NICHE}}
+
+MASTER PROMPT (authoritative — obey its fixed/variable rules):
+"""
+{{MASTER}}
+"""
+{{AVOID}}
+Invent ONE new idea now. Output EXACTLY with "SUMMARY:" then "PROMPT:" as instructed.

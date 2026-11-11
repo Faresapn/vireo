@@ -1,0 +1,1 @@
+\nVOICE (critical): the character SPEAKS USING THE PROVIDED REFERENCE AUDIO — match that reference voice's timbre/pitch/accent, lips synced to the lines. Do NOT invent a new voice. Plain English only, no "@" tokens.

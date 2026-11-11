@@ -19,6 +19,9 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { delegateToGo } from "./_go.mjs";
+
+delegateToGo("ingest", process.argv.slice(2));
 
 const STUDIO_ROOT = path.resolve(import.meta.dirname, "..");
 const DB_PATH = path.join(STUDIO_ROOT, "db", "studio.db");
@@ -118,29 +121,35 @@ async function main() {
     console.error(`Persona '${personaId}' not found`);
     process.exit(1);
   }
-  const slug = persona.viral_cluster_slug;
+  const slug = process.argv[5] || persona.viral_cluster_slug;
   if (!slug) {
-    console.error(`Persona '${personaId}' belum punya viral_cluster_slug`);
+    console.error(`Persona '${personaId}' belum punya viral_cluster_slug (dan tidak ada cluster override)`);
     process.exit(1);
   }
+  // Sort order from ViralEngine MCP: "velocity" (paling rame, default) | "date" (paling baru).
+  const order = process.argv[6] === "date" ? "date" : "velocity";
 
   // Auto-offset: MCP returns the same top-N by velocity every call, so without
   // paging a 2nd ingest just re-fetches already-seen shortcodes (all dedup-skipped
   // → "data gak berubah"). Advance the offset past how many we've already pulled
   // for this cluster, so each ingest reaches fresh items. Explicit arg overrides.
-  const argOffset = process.argv[4] != null ? parseInt(process.argv[4], 10) : null;
-  let offset = argOffset;
+  const argOffset = process.argv[4] ? parseInt(process.argv[4], 10) : null;
+  let offset = Number.isFinite(argOffset) ? argOffset : null;
+  let fetchLimit = limit;
   if (offset == null) {
     const seen = db.prepare(
       "SELECT COUNT(*) AS n FROM videos WHERE persona_id=?"
     ).get(personaId);
-    offset = seen?.n || 0;
+    // "date" (paling baru) must start from the newest; dedup skips what we already have.
+    offset = order === "date" ? 0 : (seen?.n || 0);
+    // Fetch past the rows we already hold so `limit` new items are still reachable.
+    if (order === "date") fetchLimit = Math.min(limit + (seen?.n || 0), 50);
   }
-  console.error(`Persona: ${persona.name} | cluster: ${slug} | limit: ${limit} | offset: ${offset}`);
+  console.error(`Persona: ${persona.name} | cluster: ${slug} | order: ${order} | limit: ${limit} | offset: ${offset}`);
   let parsed = await mcpCall("list_instagram_signals", {
     cluster: slug,
-    order: "velocity",
-    limit,
+    order,
+    limit: fetchLimit,
     offset,
   });
   let sc = structured(parsed);
@@ -148,7 +157,7 @@ async function main() {
   // If the offset ran past the end (no items), wrap back to 0 once.
   if (cluster && (!cluster.items || cluster.items.length === 0) && offset > 0) {
     console.error("offset past end, wrapping to 0…");
-    parsed = await mcpCall("list_instagram_signals", { cluster: slug, order: "velocity", limit, offset: 0 });
+    parsed = await mcpCall("list_instagram_signals", { cluster: slug, order, limit: fetchLimit, offset: 0 });
     sc = structured(parsed);
     cluster = sc?.clusters?.[0];
   }
@@ -167,7 +176,7 @@ async function main() {
      FROM decisions WHERE niche=? AND verdict='ok' AND duration_s IS NOT NULL`
   ).get(persona2?.niche || "");
   const avgOkDur = okStats?.n >= 3 ? okStats.avg_dur : null; // need >=3 samples
-  if (avgOkDur) {
+  if (avgOkDur && order !== "date") {
     console.error(`RAG: niche '${persona2.niche}' prefers ~${avgOkDur.toFixed(0)}s refs (from ${okStats.n} OK). Re-ranking.\n`);
     const maxVph = Math.max(...items.map((it) => it.views_per_hour || 0), 1);
     const score = (it) => {
@@ -189,12 +198,15 @@ async function main() {
 
   const ins = db.prepare(`
     INSERT INTO videos
-      (persona_id, stage, source_url, local_ref, duration_s, shortcode, views, views_per_hour, caption, creator, ingested_at)
-    VALUES (?, 'inbox', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      (persona_id, stage, source_url, local_ref, duration_s, shortcode, views, views_per_hour, caption, creator, ingest_order, ingested_at)
+    VALUES (?, 'inbox', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `);
 
   let added = 0, skipped = 0, failed = 0;
   for (const it of items) {
+    // "date" fetches extra rows to get past duplicates: stop at the requested new
+    // count, and don't let a run of blocked posts use up the request timeout.
+    if (order === "date" && (added >= limit || added + failed >= limit * 2)) break;
     const sc2 = it.shortcode;
     if (!sc2 || existing.has(sc2)) { skipped++; continue; }
     const url = it.url;
@@ -203,7 +215,8 @@ async function main() {
       execFileSync("yt-dlp", ["--no-playlist", "-f", "b[ext=mp4]/mp4/best",
         "-o", dest, url], { encoding: "utf8", stdio: "pipe" });
     } catch (e) {
-      console.error(`  ✗ ${sc2} download gagal (private/blocked)`);
+      const reason = String(e.stderr || e.message || "").split("\n").filter((l) => l.startsWith("ERROR")).pop() || String(e.message || e);
+      console.error(`  ✗ ${sc2} download gagal: ${reason.slice(0, 160)}`);
       failed++;
       continue;
     }
@@ -237,7 +250,7 @@ async function main() {
     const relRef = path.join("refs", `${slug}_${sc2}.mp4`);
     ins.run(personaId, url, relRef, pr.duration, sc2,
       it.views || null, it.views_per_hour || null,
-      (it.caption || "").slice(0, 500), it.creator || null);
+      (it.caption || "").slice(0, 500), it.creator || null, order);
     added++;
     console.error(`  ✓ ${sc2} ${pr.width}x${pr.height} ${pr.duration.toFixed(1)}s views=${it.views}`);
   }

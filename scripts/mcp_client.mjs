@@ -12,6 +12,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { delegateToGo } from "./_go.mjs";
+
+delegateToGo(process.argv[2] === "call" ? "mcp call" : "mcp list", process.argv[2] === "call" ? process.argv.slice(3) : []);
 
 const MCP_URL = "https://backend-production-226f.up.railway.app/mcp/";
 const TOKEN_FILE = path.join(os.homedir(), ".viralengine_token");

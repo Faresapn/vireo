@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, PERSONAS_DIR, STUDIO_ROOT } from "@/lib/db";
+import { viaGo } from "@/lib/goBackend";
 import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
@@ -26,7 +27,9 @@ function slugify(s: string) {
 }
 
 // GET /api/personas  -> list (non-archived first)
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const go = await viaGo(req, "/api/personas");
+  if (go) return go;
   const rows = db()
     .prepare(
       `SELECT p.*,
@@ -60,10 +63,19 @@ export async function POST(req: NextRequest) {
     fs.mkdirSync(path.join(pdir, sub), { recursive: true });
   }
 
+  const VALID_ENGINES = ["seedance", "seedance-2.5", "wan-prime", "wan", "genjutsu", "genjutsu-light"];
+  const cluster = body.viral_cluster_slug || null;
+  // Idea-only persona (no viral cluster) is LOCKED to Seedance 2.5 reference-to-video
+  // (character image + prompt, forced 9:16, no motion ref) — no model choice.
+  // Otherwise honor the picked engine (or null = Auto/RAG).
+  const autoEngine = !cluster
+    ? "seedance"
+    : (VALID_ENGINES.includes(body.auto_engine) ? body.auto_engine : null);
+
   db()
     .prepare(
-      `INSERT INTO personas (id, name, niche, platform, aspect, viral_source, viral_cluster_slug, char_mode, audio_mode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO personas (id, name, niche, platform, aspect, viral_source, viral_cluster_slug, char_mode, audio_mode, auto_engine)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -72,9 +84,10 @@ export async function POST(req: NextRequest) {
       body.platform || "instagram",
       body.aspect || "9:16",
       body.viral_source || null,
-      body.viral_cluster_slug || null,
+      cluster,
       body.char_mode === "duo" ? "duo" : "single",
-      ["auto", "ref", "off"].includes(body.audio_mode) ? body.audio_mode : "auto"
+      ["auto", "ref", "off"].includes(body.audio_mode) ? body.audio_mode : "auto",
+      autoEngine
     );
 
   const row = db().prepare("SELECT * FROM personas WHERE id=?").get(id);

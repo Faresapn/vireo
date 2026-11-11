@@ -8,17 +8,24 @@ export const dynamic = "force-dynamic";
 
 const MAX_IMAGES = 8;
 
-// GET -> list character images for persona
+// GET -> list character images for persona (or a specific video via ?video_id=)
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const rows = db()
-    .prepare(
-      "SELECT id, rel_path, width, height, ord, char_group FROM character_images WHERE persona_id=? ORDER BY ord ASC, id ASC"
-    )
-    .all(id);
+  const videoId = req.nextUrl.searchParams.get("video_id");
+  const rows = videoId
+    ? db()
+        .prepare(
+          "SELECT id, rel_path, width, height, ord, char_group, video_id FROM character_images WHERE video_id=? ORDER BY ord ASC, id ASC"
+        )
+        .all(videoId)
+    : db()
+        .prepare(
+          "SELECT id, rel_path, width, height, ord, char_group, video_id FROM character_images WHERE persona_id=? AND video_id IS NULL ORDER BY ord ASC, id ASC"
+        )
+        .all(id);
   return NextResponse.json(rows);
 }
 
@@ -32,29 +39,35 @@ export async function POST(
   if (!persona)
     return NextResponse.json({ error: "persona not found" }, { status: 404 });
 
-  const count = (
-    db()
-      .prepare("SELECT COUNT(*) AS n FROM character_images WHERE persona_id=?")
-      .get(id) as any
-  ).n as number;
-  if (count >= MAX_IMAGES)
-    return NextResponse.json(
-      { error: `maksimal ${MAX_IMAGES} foto per persona` },
-      { status: 400 }
-    );
-
   const form = await req.formData();
   const file = form.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "no file" }, { status: 400 });
   // char_group: 1 or 2 (for duo personas). Defaults to 1.
   const charGroup = (form.get("char_group") as string) === "2" ? 2 : 1;
+  // video_id: when set, this image belongs to ONE ref (freestyle per-ref).
+  const videoIdRaw = form.get("video_id") as string | null;
+  const videoId = videoIdRaw && /^\d+$/.test(videoIdRaw) ? parseInt(videoIdRaw, 10) : null;
+
+  // Count within the right scope (per-video for freestyle, else persona-wide).
+  const scopeCount = (
+    (videoId
+      ? db().prepare("SELECT COUNT(*) AS n FROM character_images WHERE video_id=?").get(videoId)
+      : db().prepare("SELECT COUNT(*) AS n FROM character_images WHERE persona_id=? AND video_id IS NULL").get(id)) as any
+  ).n as number;
+  if (scopeCount >= MAX_IMAGES)
+    return NextResponse.json(
+      { error: `maksimal ${MAX_IMAGES} foto per ${videoId ? "ref" : "persona"}` },
+      { status: 400 }
+    );
 
   const buf = Buffer.from(await file.arrayBuffer());
   const ext = (path.extname(file.name) || ".jpg").toLowerCase();
   const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext) ? ext : ".jpg";
-  const idx = count + 1;
+  const idx = scopeCount + 1;
+  // per-video chars live under char/v<videoId>/ to avoid filename clashes
+  const subdir = videoId ? path.join("char", `v${videoId}`) : "char";
   const fname = `character_${idx}${safeExt}`;
-  const chardir = path.join(PERSONAS_DIR, id, "char");
+  const chardir = path.join(PERSONAS_DIR, id, subdir);
   fs.mkdirSync(chardir, { recursive: true });
   const dest = path.join(chardir, fname);
   fs.writeFileSync(dest, buf);
@@ -78,15 +91,16 @@ export async function POST(
     height = h || 0;
   } catch {}
 
-  const relPath = path.join("char", fname);
+  const relPath = path.join(subdir, fname);
   db()
     .prepare(
-      "INSERT INTO character_images (persona_id, rel_path, width, height, ord, char_group) VALUES (?,?,?,?,?,?)"
+      "INSERT INTO character_images (persona_id, rel_path, width, height, ord, char_group, video_id) VALUES (?,?,?,?,?,?,?)"
     )
-    .run(id, relPath, width, height, count, charGroup);
+    .run(id, relPath, width, height, scopeCount, charGroup, videoId);
 
-  // keep personas.character_img pointing at the FIRST image (avatar)
-  if (count === 0) {
+  // keep personas.character_img pointing at the FIRST image (avatar).
+  // Only for persona-wide uploads — per-ref freestyle images don't touch avatar.
+  if (!videoId && scopeCount === 0) {
     db()
       .prepare(
         "UPDATE personas SET character_img=?, updated_at=datetime('now') WHERE id=?"
@@ -104,7 +118,7 @@ export async function POST(
     rel_path: relPath,
     width,
     height,
-    count: count + 1,
+    count: scopeCount + 1,
     warn,
   });
 }
@@ -129,17 +143,20 @@ export async function DELETE(
   } catch {}
   db().prepare("DELETE FROM character_images WHERE id=?").run(imgId);
 
-  // fix avatar pointer: set to the new first image (or null)
-  const first = db()
-    .prepare(
-      "SELECT rel_path FROM character_images WHERE persona_id=? ORDER BY ord ASC, id ASC LIMIT 1"
-    )
-    .get(id) as any;
-  db()
-    .prepare(
-      "UPDATE personas SET character_img=?, updated_at=datetime('now') WHERE id=?"
-    )
-    .run(first ? first.rel_path : null, id);
+  // Avatar pointer only tracks persona-wide images. Deleting a per-ref
+  // (video-scoped) image never touches the persona avatar.
+  if (!row.video_id) {
+    const first = db()
+      .prepare(
+        "SELECT rel_path FROM character_images WHERE persona_id=? AND video_id IS NULL ORDER BY ord ASC, id ASC LIMIT 1"
+      )
+      .get(id) as any;
+    db()
+      .prepare(
+        "UPDATE personas SET character_img=?, updated_at=datetime('now') WHERE id=?"
+      )
+      .run(first ? first.rel_path : null, id);
+  }
 
   return NextResponse.json({ ok: true });
 }

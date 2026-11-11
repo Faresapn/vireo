@@ -2,7 +2,13 @@
 /**
  * AUTO orchestrator — one-button full pipeline, no human touch.
  *
- * Usage: node auto_generate.mjs <persona_id> [count]
+ * Usage: node auto_generate.mjs <persona_id> [count] [--res 720p] [--order date] [--fresh] [--max-dur N]
+ *   --res      output resolution (default 720p)
+ *   --order    ingest sort: "date" pulls the newest posts (default velocity)
+ *   --fresh    always ingest new refs first, not only when INBOX is empty
+ *   --max-dur  skip refs longer than N seconds before screening
+ *   With --order date, refs pulled by date are preferred and ranked by velocity,
+ *   so the pick is the hottest of the newest.
  *
  * For each of `count` videos (default 1):
  *   1. ensure INBOX has refs (ingest from MCP if empty)
@@ -20,12 +26,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, execSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { delegateToGo } from "./_go.mjs";
+
+delegateToGo("auto", process.argv.slice(2), { paid: true });
 
 const STUDIO_ROOT = path.resolve(import.meta.dirname, "..");
 const SCRIPTS = path.join(STUDIO_ROOT, "scripts");
 const DB_PATH = path.join(STUDIO_ROOT, "db", "studio.db");
 
-function run(script, args, timeoutMs = 780000) {
+function run(script, args, timeoutMs = 45 * 60 * 1000) { // generate polls up to 40 min
   return execFileSync("node", [path.join(SCRIPTS, script), ...args], {
     encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "inherit"],
   });
@@ -55,10 +64,16 @@ function pickEngine(db, niche, caption, durationS) {
   return row?.engine || "seedance";
 }
 
-function pickRef(db, personaId, niche, tried = new Set()) {
-  const inbox = db.prepare(
+function pickRef(db, personaId, niche, tried = new Set(), opts = {}) {
+  let inbox = db.prepare(
     "SELECT * FROM videos WHERE persona_id=? AND stage='inbox'"
   ).all(personaId).filter((v) => !tried.has(v.id));
+  if (opts.maxDur) inbox = inbox.filter((v) => (v.duration_s || 0) > 0 && v.duration_s <= opts.maxDur);
+  let narrowed = false;
+  if (opts.order) {
+    const sameOrder = inbox.filter((v) => v.ingest_order === opts.order);
+    if (sameOrder.length && sameOrder.length < inbox.length) { inbox = sameOrder; narrowed = true; }
+  }
   if (!inbox.length) return null;
 
   // Pre-screen candidates with vision (skip ones already screened).
@@ -94,7 +109,11 @@ function pickRef(db, personaId, niche, tried = new Set()) {
   // only consider screened candidates with score >= 45 (avoid bad refs).
   // If NONE are viable, return null — do NOT force-pick a bad ref (wastes credits).
   const viable = byVel.filter((v) => (v.ref_score ?? 50) >= 45);
-  if (!viable.length) return null;
+  if (!viable.length) {
+    // Newest refs all bad: fall back to the rest of the inbox instead of giving up.
+    if (narrowed) return pickRef(db, personaId, niche, tried, { ...opts, order: null });
+    return null;
+  }
   return viable.slice().sort((a, b) => score(b) - score(a))[0];
 }
 
@@ -109,7 +128,15 @@ function ragAutoDone(db, niche) {
 }
 
 async function main() {
-  const [, , personaId, countArg] = process.argv;
+  const argv = process.argv.slice(2);
+  const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
+  const opts = {
+    res: ["480p", "720p"].includes(flag("--res")) ? flag("--res") : null,
+    order: flag("--order") === "date" ? "date" : null,
+    fresh: argv.includes("--fresh"),
+    maxDur: Number(flag("--max-dur")) || null,
+  };
+  const [personaId, countArg] = argv.filter((a, i) => !a.startsWith("--") && !(i > 0 && argv[i - 1].startsWith("--") && argv[i - 1] !== "--fresh"));
   const count = Math.max(1, parseInt(countArg || "1", 10));
   if (!personaId) { console.error("Usage: node auto_generate.mjs <persona_id> [count]"); process.exit(2); }
 
@@ -124,9 +151,10 @@ async function main() {
 
     // 1. ensure inbox
     let inboxN = db.prepare("SELECT COUNT(*) n FROM videos WHERE persona_id=? AND stage='inbox'").get(personaId).n;
-    if (inboxN === 0) {
-      console.error("INBOX kosong, ingest dari MCP…");
-      try { run("ingest_viral.mjs", [personaId, "8"], 300000); } catch (e) { console.error("ingest gagal:", e.message); }
+    if (inboxN === 0 || (opts.fresh && i === 0)) {
+      console.error(`Ingest dari MCP (${opts.order || "velocity"})…`);
+      const ingestArgs = opts.order ? [personaId, "8", "", "", opts.order] : [personaId, "8"];
+      try { run("ingest_viral.mjs", ingestArgs, 300000); } catch (e) { console.error("ingest gagal:", e.message); }
     }
 
     // retry up to 3 different refs (refs get blocked by nsfw/copyright sometimes)
@@ -134,7 +162,7 @@ async function main() {
     const tried = new Set();
     for (let attempt = 0; attempt < 3 && !done; attempt++) {
       // 2. pick ref (excluding already-tried ones this run)
-      const ref = pickRef(db, personaId, niche, tried);
+      const ref = pickRef(db, personaId, niche, tried, opts);
       if (!ref) { console.error("tidak ada ref viable di INBOX"); results.push({ ok: false, reason: "no ref" }); break; }
       tried.add(ref.id);
       console.error(`[attempt ${attempt + 1}] Ref: ${ref.shortcode} (${ref.duration_s?.toFixed(0)}s, score ${ref.ref_score}, ${Math.round(ref.views_per_hour || 0)}/h)`);
@@ -152,9 +180,9 @@ async function main() {
       const engine = locked || pickEngine(db, niche, ref.caption, ref.duration_s);
       console.error(`Engine: ${engine}${locked ? " (locked)" : " (auto)"} (ref ${ref.duration_s?.toFixed(0)}s)`);
 
-      // 5. resolution — draft 480p while RAG unsure; final = 720p (per Branko, no 1080p)
+      // 5. resolution — always 720p (per Branko: no 480p draft, no 1080p)
       const rag = ragAutoDone(db, niche);
-      const resolution = rag.auto ? "720p" : "480p";
+      const resolution = opts.res || (persona.render_res === "480p" ? "480p" : "720p");
       console.error(`Resolution: ${resolution} (RAG first-try ${(rag.rate * 100).toFixed(0)}%, ${rag.samples} samples)`);
 
       // 6. generate
@@ -174,8 +202,10 @@ async function main() {
         console.error("AUTO-DONE (RAG proven) + archived to Drive");
         results.push({ ok: true, shortcode: ref.shortcode, engine, resolution, stage: "done" });
       } else {
-        console.error("Masuk QC (nunggu review manual)");
-        results.push({ ok: true, shortcode: ref.shortcode, engine, resolution, stage: "qc" });
+        // generate.mjs already set 'done' for skip_qc personas (Denvo, Kaylee).
+        const stage = db.prepare("SELECT stage FROM videos WHERE id=?").get(ref.id)?.stage || "qc";
+        console.error(stage === "done" ? "Langsung HASIL (skip QC)" : "Masuk QC (nunggu review manual)");
+        results.push({ ok: true, shortcode: ref.shortcode, engine, resolution, stage });
       }
       done = true;
     }

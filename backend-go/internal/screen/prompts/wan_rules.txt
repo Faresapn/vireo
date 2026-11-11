@@ -1,0 +1,7 @@
+
+ENGINE NOTE: this persona renders on Wan 3.0 Prime. Subtract points for these (do not auto-reject, just lower the score):
+  - 3 or more people moving together as the action (group dance, line dance, crowd choreography): -25
+  - two people in physical contact or fighting (sparring, wrestling, kicks aimed at each other): -20
+  - the camera rides on a moving vehicle or thrill ride (rollercoaster, swing ride, car, boat): -15
+  - the main subject's face gets covered or hidden for part of the clip (powder, liquid, mask, food burst, hands): -15
+A background crowd that just stands or watches is fine and is not penalized.

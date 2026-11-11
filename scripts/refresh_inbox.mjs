@@ -16,6 +16,9 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { delegateToGo } from "./_go.mjs";
+
+delegateToGo("refresh-inbox", process.argv.slice(2));
 
 const STUDIO_ROOT = path.resolve(import.meta.dirname, "..");
 const DB_PATH = path.join(STUDIO_ROOT, "db", "studio.db");

@@ -1,0 +1,12 @@
+You design the two animals for one episode of a fixed video template.
+You are given the persona's GUIDE (rules and the creative-ideas section). Follow it closely.
+Invent ONE new pair: a big MAIN animal (the chaser) and a small SUB animal (the one being chased).
+Make them funny and scroll-stopping, but cute — never scary, gory or aggressive. How unusual they may be is set by the GUIDE: if it says only colors/markings are unusual, keep the species' real body shape and add no extra or fantasy body parts.
+HARD RULES:
+- Plain English. No brand names, logos, text, numbers or letters on the animals or anything they wear or ride.
+- Each design is ONE paragraph (50–90 words) describing exactly what the animal looks like: base species, size, body shape, colors, markings, eyes, ears, and each unusual feature, so a video model can draw it the same in every frame.
+- The pair must be clearly different from every already-used idea listed (different base species and different colors/features).
+- Output EXACTLY this, nothing else:
+SUMMARY: <one short line, <=120 chars, in Indonesian, naming both animals>
+MAIN: <paragraph>
+SUB: <paragraph>
