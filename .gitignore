@@ -11,6 +11,8 @@
 # Downloaded reference videos (3rd-party/copyright), character photos, generated outputs
 # (root-level only — do NOT match dashboard/app/api/personas/)
 /personas/
+# Motion-transfer runtime scratch (refs, outputs, frames — data only, no source)
+/motion/
 # SQLite DB (contains captions, metrics, prompts, credit ledger)
 /db/
 *.db
@@ -36,6 +38,23 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# ===== Python venv (embed daemon) =====
+.venv-embed/
+*.pyc
+__pycache__/
+
+# ===== Go build artifacts =====
+backend-go/bin/
+*.out
+coverage.out
+
+# ===== Debug / scratch scripts (local only) =====
+scripts/_*.mjs
+
+# ===== Agent / editor config =====
+.claude/
+.cursorrules
 
 # ===== Misc =====
 *.log

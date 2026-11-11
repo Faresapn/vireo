@@ -8,12 +8,19 @@
  *   output 1080p (or 480p fallback) -> GDrive/HiggsfieldStudio/<slug>/output/<res>/
  *   reference mp4                    -> GDrive/HiggsfieldStudio/<slug>/references/
  *
+ * Persona with drive_folder_id (Denvo): only the output goes to that folder, named
+ *   <DD-MM-YYYY>_<persona name>_<n>.mp4, n = that persona's nth video archived that day.
+ *   "/" can't be in a file name, so the date uses "-".
+ *
  * Idempotent: rclone copyto overwrites same name. Logs a marker in DB (drive_synced).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { delegateToGo } from "./_go.mjs";
+
+delegateToGo("drive-archive", process.argv.slice(2));
 
 const STUDIO_ROOT = path.resolve(import.meta.dirname, "..");
 const DB_PATH = path.join(STUDIO_ROOT, "db", "studio.db");
@@ -21,8 +28,24 @@ const PERSONAS_DIR = path.join(STUDIO_ROOT, "personas");
 const REMOTE = "gdrive:";
 const BASE = "HiggsfieldStudio";
 
-function driveCopy(localPath, remotePath) {
-  execFileSync("rclone", ["copyto", localPath, `${REMOTE}${remotePath}`], { stdio: "pipe" });
+function driveCopy(localPath, remotePath, folderId = null) {
+  const args = ["copyto", localPath, `${REMOTE}${remotePath}`];
+  if (folderId) args.push("--drive-root-folder-id", folderId);
+  execFileSync("rclone", args, { stdio: "pipe" });
+}
+
+function datedName(db, persona, v) {
+  if (v.drive_name) return v.drive_name; // re-archive keeps its name
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, "0");
+  const day = `${p2(d.getDate())}-${p2(d.getMonth() + 1)}-${d.getFullYear()}`;
+  // "(MP) KEPIN ANIMAL" -> "KEPIN ANIMAL"
+  const label = String(persona.name || persona.id).replace(/^\(MP\)\s*/i, "").replace(/[\\/:*?"<>|]/g, "").trim();
+  const prefix = `${day}_${label}_`;
+  const used = db.prepare("SELECT drive_name FROM videos WHERE persona_id=? AND drive_name LIKE ?")
+    .all(persona.id, prefix + "%")
+    .map((r) => Number(r.drive_name.slice(prefix.length).replace(/\.mp4$/, "")) || 0);
+  return `${prefix}${Math.max(0, ...used) + 1}.mp4`;
 }
 
 async function main() {
@@ -38,6 +61,17 @@ async function main() {
 
   const slug = persona.viral_cluster_slug || persona.id;
   let uploaded = [];
+
+  if (persona.drive_folder_id) {
+    const outRel = v.output_1080 || v.output_480;
+    const local = outRel && path.join(PERSONAS_DIR, personaId, outRel);
+    if (!local || !fs.existsSync(local)) { console.error("output file not found"); process.exit(1); }
+    const name = datedName(db, persona, v);
+    driveCopy(local, name, persona.drive_folder_id);
+    db.prepare("UPDATE videos SET drive_synced=1, drive_name=?, updated_at=datetime('now') WHERE id=?").run(name, videoId);
+    console.log(JSON.stringify({ ok: true, folder: persona.drive_folder_id, uploaded: [name] }));
+    return;
+  }
 
   // 1. output (prefer 1080p, else 480p)
   const outRel = v.output_1080 || v.output_480;

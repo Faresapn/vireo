@@ -1,0 +1,2031 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import QCPage from "./QCPage";
+import MotionControl from "./MotionControl";
+import SettingsPage from "./SettingsPage";
+
+type Persona = {
+  id: string;
+  name: string;
+  niche: string;
+  platform: string;
+  aspect: string;
+  master_prompt: string | null;
+  character_img: string | null;
+  viral_source: string | null;
+  viral_cluster_slug?: string | null;
+  auto_engine?: string | null;
+  daily_auto?: number | null;
+  daily_auto_status?: string | null;
+  render_res?: string | null;
+  skip_qc?: number | null;
+  char_mode?: string | null;
+  audio_mode?: string | null;
+  archived: number;
+  cnt_inbox: number;
+  cnt_shortlist: number;
+  cnt_gen: number;
+  cnt_qc: number;
+  cnt_done: number;
+};
+
+const PLATFORMS = [
+  { key: "all", label: "Semua", icon: "✦" },
+  { key: "instagram", label: "Instagram", icon: "📷" },
+  { key: "tiktok", label: "TikTok", icon: "🎵" },
+  { key: "youtube", label: "YouTube", icon: "▶️" },
+  { key: "facebook", label: "Facebook", icon: "👤" },
+];
+
+export default function Studio({ activeIdProp }: { activeIdProp?: string | null }) {
+  const router = useRouter();
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(activeIdProp ?? null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [platform, setPlatform] = useState<string>("all");
+  const [view, setView] = useState<"studio" | "qc" | "motion" | "settings">("studio");
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/personas", { cache: "no-store" });
+    const data = await r.json();
+    setPersonas(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // sync active id from the URL prop (route-driven)
+  useEffect(() => {
+    if (activeIdProp !== undefined) setActiveId(activeIdProp);
+  }, [activeIdProp]);
+
+  // navigate helper: push a real URL so routing works
+  const selectPersona = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      router.push(`/niche/${id}`);
+    },
+    [router]
+  );
+
+  const deletePersona = useCallback(
+    async (p: Persona) => {
+      if (!confirm(`Hapus persona "${p.name}"? Video + referensi di dashboard ikut terhapus (file di disk tetap aman).`)) return;
+      await fetch(`/api/personas/${p.id}`, { method: "DELETE" });
+      if (activeId === p.id) {
+        setActiveId(null);
+        router.push("/");
+      }
+      await load();
+    },
+    [activeId, router, load]
+  );
+
+  const active = personas.find((p) => p.id === activeId) || null;
+  const visiblePersonas = personas.filter(
+    (p) => !p.archived && (platform === "all" || (p.platform || "instagram") === platform)
+  );
+
+  return (
+    <div className="flex h-screen w-full flex-col overflow-hidden">
+      {/* ===== Top navbar: brand + platform switcher ===== */}
+      <header className="flex h-14 shrink-0 items-center gap-6 border-b border-edgeSoft bg-base/70 px-5 shadow-[0_1px_0_0_rgba(0,0,0,0.5),0_8px_24px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-accent-soft to-accent-deep text-[15px] font-bold text-[#241a07] shadow-glow">V</div>
+          <div className="display text-[17px] font-bold text-ink">Vireo<span className="text-accent">.</span></div>
+        </div>
+        <nav className="flex items-center gap-1">
+          {PLATFORMS.map((pl) => {
+            const on = platform === pl.key && view === "studio";
+            return (
+              <button
+                key={pl.key}
+                onClick={() => { setPlatform(pl.key); setView("studio"); }}
+                className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-all ${on ? "bg-accent/15 text-accent-soft" : "text-faint hover:bg-raise/60 hover:text-sub"}`}
+              >
+                <span className="text-[15px] leading-none">{pl.icon}</span>
+                {pl.label}
+              </button>
+            );
+          })}
+          <span className="mx-1.5 h-5 w-px bg-edge" />
+          <button
+            onClick={() => setView("qc")}
+            className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-all ${view === "qc" ? "bg-accent/15 text-accent-soft" : "text-faint hover:bg-raise/60 hover:text-sub"}`}
+          >
+            <span className="text-[15px] leading-none">✓</span>
+            QC
+          </button>
+          <button
+            onClick={() => setView("motion")}
+            className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-all ${view === "motion" ? "bg-accent/15 text-accent-soft" : "text-faint hover:bg-raise/60 hover:text-sub"}`}
+          >
+            <span className="text-[15px] leading-none">🎞</span>
+            Motion
+          </button>
+        </nav>
+        <button
+          onClick={() => setView("settings")}
+          className={`ml-auto flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-all ${view === "settings" ? "bg-accent/15 text-accent-soft" : "text-faint hover:bg-raise/60 hover:text-sub"}`}
+        >
+          <span className="text-[15px] leading-none">⚙</span>
+          Settings
+        </button>
+      </header>
+
+      {view === "qc" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <QCPage />
+        </div>
+      ) : view === "motion" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <MotionControl />
+        </div>
+      ) : view === "settings" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SettingsPage />
+        </div>
+      ) : (
+      <div className="flex min-h-0 flex-1">
+      {/* ===== Sidebar ===== */}
+      <aside className="flex w-[264px] shrink-0 flex-col border-r border-edgeSoft bg-base/80 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4">
+          <div className="leading-none">
+            <div className="eyebrow">Personas</div>
+            <div className="mt-1 text-[11px] text-faint">{PLATFORMS.find((p) => p.key === platform)?.label}</div>
+          </div>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="grid h-7 w-7 place-items-center rounded-lg border border-edge text-sub transition hover:border-accent/50 hover:text-accent hover:bg-accent/5"
+            title="Tambah niche"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+
+        <nav className="stagger flex-1 overflow-y-auto px-2.5 pb-2">
+          {loading && (
+            <div className="space-y-1.5 px-1">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-[46px] rounded-xl shimmer" />
+              ))}
+            </div>
+          )}
+          {!loading && visiblePersonas.length === 0 && (
+            <div className="px-3 py-6 text-xs text-mute leading-relaxed">
+              {personas.filter((p) => !p.archived).length === 0
+                ? <>Belum ada persona. Klik <span className="text-accent">+</span> buat tambah niche pertama.</>
+                : <>Belum ada persona di {PLATFORMS.find((p) => p.key === platform)?.label}.</>}
+            </div>
+          )}
+          {visiblePersonas
+            .map((p) => (
+              <div
+                key={p.id}
+                onClick={() => selectPersona(p.id)}
+                className={`group relative mb-1 flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all duration-200 ${
+                  activeId === p.id
+                    ? "bg-raise"
+                    : "hover:bg-raise/50"
+                }`}
+              >
+                {activeId === p.id && (
+                  <span className="absolute left-0 top-1/2 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-accent" />
+                )}
+                <Avatar persona={p} />
+                <div className="min-w-0 flex-1">
+                  <div className={`truncate text-[13px] font-medium ${activeId === p.id ? "text-ink" : "text-sub group-hover:text-ink"}`}>
+                    {p.daily_auto ? <span className="mr-1 text-[10px] font-bold text-accent">(AUTO)</span> : null}
+                    {p.name}
+                  </div>
+                  <div className="truncate text-[11px] text-faint">
+                    {p.niche}
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deletePersona(p);
+                  }}
+                  title="Hapus persona"
+                  className="shrink-0 rounded-md p-1 text-faint opacity-0 transition hover:bg-bad/15 hover:text-bad group-hover:opacity-100"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </button>
+                <ReadyDot persona={p} />
+              </div>
+            ))}
+        </nav>
+
+        <CreditsWidget />
+
+        <div className="flex items-center gap-2 border-t border-edgeSoft px-5 py-3 text-[11px] text-faint">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok/60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
+          </span>
+          {personas.filter((p) => !p.archived).length} aktif · Instagram-first
+        </div>
+      </aside>
+
+      {/* ===== Main ===== */}
+      <main className="flex-1 overflow-y-auto">
+        {active ? (
+          <PersonaView persona={active} onChange={load} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-mute">
+            {loading ? "" : "Pilih atau tambah persona"}
+          </div>
+        )}
+      </main>
+      </div>
+      )}
+
+      {showAdd && (
+        <AddNicheModal
+          onClose={() => setShowAdd(false)}
+          onCreated={async (id) => {
+            setShowAdd(false);
+            await load();
+            selectPersona(id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreditsWidget() {
+  const [c, setC] = useState<any>(null);
+  const [topup, setTopup] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/credits", { cache: "no-store" });
+    setC(await r.json());
+  }, []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function addTopup() {
+    const amt = parseFloat(topup);
+    if (isNaN(amt)) return;
+    await fetch("/api/credits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topup: amt }),
+    });
+    setTopup("");
+    setOpen(false);
+    load();
+  }
+
+  if (!c) return null;
+  const low = c.balance < 5;
+  return (
+    <div className="mx-2.5 mb-2 rounded-xl border border-edgeSoft bg-panel/60 px-3.5 py-3">
+      <div className="flex items-center justify-between">
+        <span className="eyebrow">Saldo Higgsfield</span>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="text-[10px] font-medium text-accent transition hover:text-accent-soft"
+        >
+          + top-up
+        </button>
+      </div>
+      <div className={`mt-1.5 flex items-baseline gap-1.5 font-semibold tracking-tightest ${low ? "text-bad" : "text-ink"}`}>
+        <span className="text-[22px] tabular-nums">${c.balance?.toFixed(2)}</span>
+        {low && <span className="text-[10px] font-normal text-bad">⚠ menipis</span>}
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 text-[10px] text-faint">
+        <span>terpakai ~${c.total_spend_est?.toFixed(2)}</span>
+        <span className="h-0.5 w-0.5 rounded-full bg-faint" />
+        <span>{c.videos_charged} video</span>
+      </div>
+      {/* usage bar */}
+      {c.topup_total > 0 && (
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-raise">
+          <div
+            className={`h-full rounded-full ${low ? "bg-bad" : "bg-accent"}`}
+            style={{ width: `${Math.min(100, Math.max(2, ((c.total_spend_est || 0) / c.topup_total) * 100))}%` }}
+          />
+        </div>
+      )}
+      {open && (
+        <div className="mt-2.5 flex gap-1.5">
+          <input
+            type="number"
+            value={topup}
+            onChange={(e) => setTopup(e.target.value)}
+            placeholder="isi $ (cek console)"
+            className="w-full rounded-lg border border-edge bg-void px-2.5 py-1.5 text-[11px] text-ink outline-none transition focus:border-accent/50 focus:shadow-[0_0_0_3px_rgba(232,177,76,0.1)]"
+          />
+          <button
+            onClick={addTopup}
+            className="rounded-lg bg-accent px-3 py-1.5 text-[10px] font-semibold text-[#241a07] transition hover:brightness-105"
+          >
+            set
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Avatar({ persona }: { persona: Persona }) {
+  if (persona.character_img) {
+    return (
+      <img
+        src={`/api/media/${persona.id}/${persona.character_img}`}
+        alt=""
+        className="h-9 w-9 shrink-0 rounded-lg object-cover ring-1 ring-edge"
+      />
+    );
+  }
+  const letter = persona.name.replace(/^Kepin\s+/i, "").charAt(0).toUpperCase() || persona.name.charAt(0).toUpperCase();
+  return (
+    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-raise text-[13px] font-semibold text-sub ring-1 ring-edge">
+      {letter}
+    </div>
+  );
+}
+
+// dot = ready (has master prompt + character)
+function ReadyDot({ persona }: { persona: Persona }) {
+  const ready = !!persona.master_prompt && !!persona.character_img;
+  return (
+    <span
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+        ready ? "bg-ok shadow-[0_0_8px_rgba(74,222,128,0.6)]" : "bg-warn/50"
+      }`}
+      title={ready ? "Siap generate" : "Lengkapi master prompt + character"}
+    />
+  );
+}
+
+/* ========================= Persona View ========================= */
+
+function PersonaView({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  const [tab, setTab] = useState<"setup" | "refs" | "pipeline" | "insights">(
+    persona.master_prompt && persona.character_img ? "pipeline" : "setup"
+  );
+
+  return (
+    <div className="mx-auto max-w-[2100px] animate-fade-up px-12 py-8 2xl:px-16">
+      {/* header */}
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <Avatar persona={persona} />
+          </div>
+          <div>
+            <h1 className="display text-[34px] font-semibold text-ink">
+              {persona.name}
+            </h1>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <Tag>{persona.niche}</Tag>
+              <Tag>{persona.platform}</Tag>
+              <Tag>{persona.aspect}</Tag>
+              {persona.viral_cluster_slug && (
+                <span className="chip border-accent/20 bg-accent/5 text-accent-soft">
+                  {persona.viral_cluster_slug}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-0.5 rounded-xl border border-edgeSoft bg-base/60 p-1 backdrop-blur">
+          {([
+            ["setup", "Setup"],
+            ["refs", "Pilih Ref"],
+            ["pipeline", "Pipeline"],
+            ["insights", "Insights"],
+          ] as const).map(([t, label]) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`relative rounded-lg px-4 py-1.5 text-[13px] font-medium transition-all duration-200 ${
+                tab === t
+                  ? "bg-raise text-ink shadow-sm"
+                  : "text-mute hover:text-sub"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        {tab === "setup" ? (
+          <SetupPanel persona={persona} onChange={onChange} />
+        ) : tab === "refs" ? (
+          <PipelineBoard persona={persona} view="refs" />
+        ) : tab === "pipeline" ? (
+          <PipelineBoard persona={persona} view="pipeline" />
+        ) : (
+          <InsightsPanel persona={persona} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InsightsPanel({ persona }: { persona: Persona }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/personas/${persona.id}/insights`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        setData(d);
+        setLoading(false);
+      });
+  }, [persona.id]);
+
+  if (loading) return <div className="text-xs text-mute">Loading insights…</div>;
+  if (!data || data.error)
+    return <div className="text-xs text-mute">Belum ada data RAG.</div>;
+
+  const rec = data.recommendations || {};
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* summary */}
+      <div className="card p-5">
+        <div className="eyebrow">
+          RAG MEMORY — niche: {data.niche}
+        </div>
+        <div className="mt-1 text-[11px] text-mute">
+          {data.total_decisions} keputusan QC tercatat
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <Stat label="OK" value={data.counts.ok} tone="ok" />
+          <Stat label="Revisi" value={data.counts.revisi} tone="warn" />
+          <Stat label="Ulang" value={data.counts.ulang} tone="bad" />
+        </div>
+        <div className="mt-4 space-y-1.5 text-[11px]">
+          <Row k="OK rate" v={`${(data.ok_rate * 100).toFixed(0)}%`} />
+          <Row
+            k="First-try OK"
+            v={`${(data.first_try_ok_rate * 100).toFixed(0)}% (${data.first_try_samples} sampel)`}
+          />
+          <Row k="Best engine" v={data.best_engine || "—"} />
+        </div>
+      </div>
+
+      {/* recommendation */}
+      <div className="card p-5">
+        <div className="eyebrow">
+          REKOMENDASI SISTEM
+        </div>
+        <div
+          className={`mt-3 rounded-lg border p-3 text-[11px] leading-relaxed ${
+            rec.auto_skip_480p
+              ? "border-ok/40 bg-ok/10 text-ok"
+              : "border-edge bg-void text-mute"
+          }`}
+        >
+          <div className="font-semibold">
+            {rec.auto_skip_480p ? "✓ First-try stabil" : "⏳ First-try belum stabil"}
+          </div>
+          <div className="mt-1">{rec.note}</div>
+        </div>
+        {data.engines?.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-1.5 text-[10px] font-mono tracking-widest text-mute">
+              ENGINE WIN-RATE
+            </div>
+            {data.engines.map((e: any) => (
+              <div key={e.engine} className="flex items-center justify-between text-[11px]">
+                <span className="text-ink">{e.engine}</span>
+                <span className="text-mute">
+                  {e.ok}/{e.total} ({(e.win_rate * 100).toFixed(0)}%)
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* winning prompts */}
+      {data.winning_prompts?.length > 0 && (
+        <div className="card p-5 lg:col-span-2">
+          <div className="eyebrow">
+            PROMPT LIBRARY — yang menang (OK)
+          </div>
+          <div className="mt-3 space-y-2">
+            {data.winning_prompts.map((p: any, i: number) => (
+              <details key={i} className="rounded-lg border border-edge bg-void p-2">
+                <summary className="cursor-pointer text-[11px] text-ink">
+                  {p.shortcode} · {p.engine} ·{" "}
+                  <span className="text-mute">{p.created_at}</span>
+                </summary>
+                <pre className="mt-2 whitespace-pre-wrap font-mono text-[10px] leading-snug text-mute">
+                  {p.prompt}
+                </pre>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  const color = tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : "text-bad";
+  return (
+    <div className="rounded-lg border border-edge bg-void p-3 text-center">
+      <div className={`text-xl font-semibold ${color}`}>{value}</div>
+      <div className="text-[10px] text-mute">{label}</div>
+    </div>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-mute">{k}</span>
+      <span className="text-ink">{v}</span>
+    </div>
+  );
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="chip font-mono text-[10px] tracking-wide">
+      {children}
+    </span>
+  );
+}
+
+/* ========================= Setup Panel ========================= */
+
+function SetupPanel({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <CharacterCard persona={persona} onChange={onChange} />
+      <MasterPromptCard persona={persona} onChange={onChange} />
+      <AnimalPoolCard persona={persona} onChange={onChange} />
+      {(persona.audio_mode || "auto") === "ref" && (
+        <VoiceCard persona={persona} onChange={onChange} />
+      )}
+    </div>
+  );
+}
+
+function AnimalPoolCard({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  const [animals, setAnimals] = useState<{ name: string; rel_path: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const r = await fetch(`/api/personas/${persona.id}/animals`, { cache: "no-store" });
+    const d = await r.json();
+    setAnimals(d.animals || []);
+  }, [persona.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function upload(files: FileList) {
+    setBusy(true); setMsg(null);
+    let warn: string | null = null;
+    for (const file of Array.from(files)) {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch(`/api/personas/${persona.id}/animals`, { method: "POST", body: fd });
+      const d = await r.json();
+      if (d.error) { warn = "Error: " + d.error; break; }
+      if (d.warn) warn = d.warn;
+    }
+    setBusy(false);
+    setMsg(warn || "✓ animal ter-upload");
+    await load(); onChange();
+  }
+
+  async function remove(name: string) {
+    setBusy(true);
+    await fetch(`/api/personas/${persona.id}/animals?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+    setBusy(false);
+    await load(); onChange();
+  }
+
+  return (
+    <Card
+      title="ANIMAL POOL"
+      hint="Pool gambar hewan — tiap generate dipilih 1 acak + dikirim sbg image reference"
+    >
+      <div className="grid grid-cols-4 gap-2.5">
+        {animals.map((a) => (
+          <div key={a.name} className="group relative aspect-square overflow-hidden rounded-lg border border-edge bg-void">
+            <img
+              src={`/api/media/${persona.id}/${a.rel_path}`}
+              alt={a.name}
+              className="h-full w-full object-cover"
+            />
+            <button
+              onClick={() => remove(a.name)}
+              disabled={busy}
+              className="absolute right-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-bad opacity-0 transition group-hover:opacity-100 hover:bg-black/90"
+            >
+              hapus
+            </button>
+            <div className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 py-0.5 text-[9px] text-mute">
+              {a.name}
+            </div>
+          </div>
+        ))}
+        <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-edge text-mute transition hover:border-accent/50 hover:text-accent">
+          <span className="text-xl leading-none">🐾</span>
+          <span className="text-[10px]">{busy ? "Upload…" : "tambah"}</span>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => { if (e.target.files?.length) upload(e.target.files); e.target.value = ""; }}
+          />
+        </label>
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-mute">
+        {animals.length} hewan di pool. Tiap generate sistem pilih 1 acak (bisa upload banyak sekaligus).
+        Wajah/bentuk hewan jelas, ≥1024px. Di master prompt rujuk sbg hewan dari reference image.
+      </p>
+      {msg && <div className="mt-2 text-[11px] text-mute">{msg}</div>}
+    </Card>
+  );
+}
+
+function CharacterCard({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  const [imgs, setImgs] = useState<
+    { id: number; rel_path: string; width: number; height: number; char_group?: number }[]
+  >([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const isDuo = (persona.char_mode || "single") === "duo";
+
+  const loadImgs = useCallback(async () => {
+    const r = await fetch(`/api/personas/${persona.id}/character`, {
+      cache: "no-store",
+    });
+    setImgs(await r.json());
+  }, [persona.id]);
+
+  useEffect(() => {
+    loadImgs();
+  }, [loadImgs]);
+
+  async function upload(file: File, group: number = 1) {
+    setBusy(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("char_group", String(group));
+    const r = await fetch(`/api/personas/${persona.id}/character`, {
+      method: "POST",
+      body: fd,
+    });
+    const data = await r.json();
+    setBusy(false);
+    if (data.error) setMsg("Error: " + data.error);
+    else {
+      setMsg(
+        data.warn
+          ? "⚠ " + data.warn
+          : `OK · ${data.width}×${data.height} — foto ${data.count}/8`
+      );
+      await loadImgs();
+      onChange();
+    }
+  }
+
+  async function remove(imgId: number) {
+    setBusy(true);
+    await fetch(`/api/personas/${persona.id}/character?img=${imgId}`, {
+      method: "DELETE",
+    });
+    setBusy(false);
+    await loadImgs();
+    onChange();
+  }
+
+  const full = imgs.length >= 8;
+
+  // one photo tile
+  const Tile = ({ im }: { im: typeof imgs[number] }) => (
+    <div className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-edge bg-void">
+      <img src={`/api/media/${persona.id}/${im.rel_path}?t=${im.id}`} alt="" className="h-full w-full object-cover" />
+      <button
+        onClick={() => remove(im.id)}
+        disabled={busy}
+        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded bg-black/70 text-xs text-bad opacity-0 transition group-hover:opacity-100 hover:bg-black"
+        title="Hapus"
+      >×</button>
+      {im.width > 0 && im.width < 768 && (
+        <span className="absolute bottom-0 left-0 right-0 bg-warn/20 px-1 py-0.5 text-center text-[8px] text-warn">{im.width}px low</span>
+      )}
+    </div>
+  );
+
+  // add-photo tile for a given group
+  const AddTile = ({ group }: { group: number }) => (
+    <label className="flex aspect-[3/4] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-edge text-mute transition hover:border-accent/50 hover:text-accent">
+      <span className="text-xl leading-none">+</span>
+      <span className="text-[10px]">{busy ? "…" : "tambah"}</span>
+      <input type="file" accept="image/*" className="hidden" disabled={busy}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f, group); e.target.value = ""; }} />
+    </label>
+  );
+
+  const g1 = imgs.filter((im) => (im.char_group || 1) === 1);
+  const g2 = imgs.filter((im) => (im.char_group || 1) === 2);
+
+  return (
+    <Card
+      title="CHARACTER LOCK"
+      hint={isDuo ? "2 karakter (duo) — tiap grup = 1 orang, dikirim sbg image_urls" : "Foto karakter (1–8) — dikirim sebagai image_urls"}
+    >
+      {!isDuo ? (
+        <div className="grid grid-cols-4 gap-2.5">
+          {imgs.map((im) => <Tile key={im.id} im={im} />)}
+          {!full && <AddTile group={1} />}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <div className="mb-1.5 eyebrow text-accent-soft">👤 Karakter 1 (kiri)</div>
+            <div className="grid grid-cols-4 gap-2.5">
+              {g1.map((im) => <Tile key={im.id} im={im} />)}
+              {!full && <AddTile group={1} />}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1.5 eyebrow text-accent-soft">👥 Karakter 2 (kanan)</div>
+            <div className="grid grid-cols-4 gap-2.5">
+              {g2.map((im) => <Tile key={im.id} im={im} />)}
+              {!full && <AddTile group={2} />}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-3 text-[11px] leading-relaxed text-mute">
+        Wajah frontal, tajam, ≥1024px. {isDuo
+          ? "Tiap karakter punya grup foto sendiri. Master prompt harus describe KARAKTER 1 (kiri) + KARAKTER 2 (kanan) + posisi."
+          : "Multi-foto (angle/ekspresi beda) bikin lock lebih kuat. Foto pertama = avatar."}
+      </p>
+      {msg && <div className="mt-2 text-[11px] text-mute">{msg}</div>}
+    </Card>
+  );
+}
+
+function VoiceCard({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  const [voices, setVoices] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const isDuo = (persona.char_mode || "single") === "duo";
+  const maxVoices = 3;
+
+  const load = useCallback(async () => {
+    const r = await fetch(`/api/personas/${persona.id}/audio`, { cache: "no-store" });
+    const d = await r.json();
+    setVoices(d.voices || []);
+  }, [persona.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function upload(file: File) {
+    setBusy(true); setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch(`/api/personas/${persona.id}/audio`, { method: "POST", body: fd });
+    const d = await r.json();
+    setBusy(false);
+    if (d.error) setMsg("Error: " + d.error);
+    else { setMsg("✓ suara ter-upload"); await load(); onChange(); }
+  }
+
+  async function removeAt(idx: number) {
+    setBusy(true);
+    await fetch(`/api/personas/${persona.id}/audio?idx=${idx + 1}`, { method: "DELETE" });
+    setBusy(false);
+    await load(); onChange();
+  }
+
+  return (
+    <Card title="REFERENCE SUARA" hint={`Audio acuan (≤30s, maks ${maxVoices}) — Seedance 2.5 audio_urls`}>
+      <div className="space-y-2">
+        {voices.map((v, i) => (
+          <div key={i} className="flex items-center gap-2.5 rounded-lg border border-edge bg-void px-2.5 py-2">
+            <span className="chip shrink-0 text-accent-soft">voice {i + 1}</span>
+            <audio src={`/api/media/${persona.id}/${v}?t=${i}`} controls className="h-8 flex-1" />
+            <button onClick={() => removeAt(i)} disabled={busy} className="shrink-0 text-[11px] text-bad hover:underline">hapus</button>
+          </div>
+        ))}
+        {voices.length < maxVoices && (
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-edge py-3 text-mute transition hover:border-accent/50 hover:text-accent">
+            <span className="text-lg leading-none">🎙️</span>
+            <span className="text-[11px]">{busy ? "Upload…" : `tambah suara (voice ${voices.length + 1})`}</span>
+            <input type="file" accept="audio/*" className="hidden" disabled={busy}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
+          </label>
+        )}
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-mute">
+        {isDuo
+          ? "Upload voice 1 + voice 2. Di master prompt tulis siapa pakai suara mana (mis. \"Karakter 1 bicara dengan voice 1\")."
+          : "Suara/musik/voice acuan (maks 30 detik/file)."}{" "}
+        <span className="text-faint">Catatan: Seedance pakai ini sebagai referensi — mapping per-karakter diarahkan lewat master prompt, gak dijamin presisi.</span>
+      </p>
+      {msg && <div className="mt-2 text-[11px] text-mute">{msg}</div>}
+    </Card>
+  );
+}
+
+function MasterPromptCard({
+  persona,
+  onChange,
+}: {
+  persona: Persona;
+  onChange: () => void;
+}) {
+  const [text, setText] = useState(persona.master_prompt || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setText(persona.master_prompt || "");
+  }, [persona.id, persona.master_prompt]);
+
+  const slots = Array.from(new Set((text.match(/\[[^\]]+\]/g) || [])));
+
+  async function saveText() {
+    setBusy(true);
+    setMsg(null);
+    const r = await fetch(`/api/personas/${persona.id}/master-prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await r.json();
+    setBusy(false);
+    if (data.error) setMsg("Error: " + data.error);
+    else {
+      setMsg(`Tersimpan · ${data.length} char · ${data.slots.length} slot`);
+      onChange();
+    }
+  }
+
+  async function uploadPdf(file: File) {
+    setBusy(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch(`/api/personas/${persona.id}/master-prompt`, {
+      method: "POST",
+      body: fd,
+    });
+    const data = await r.json();
+    setBusy(false);
+    if (data.error) setMsg("Error: " + data.error);
+    else {
+      // reload text from server
+      const pr = await fetch(`/api/personas/${persona.id}`, { cache: "no-store" });
+      const pd = await pr.json();
+      setText(pd.master_prompt || "");
+      setMsg(`PDF ter-extract · ${data.length} char · ${data.slots.length} slot`);
+      onChange();
+    }
+  }
+
+  return (
+    <Card
+      title="MASTER PROMPT"
+      hint="Sumber kebenaran — template fill-in. Slot [...] diisi per generate"
+    >
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Tempel master prompt, atau upload PDF di bawah…"
+        className="h-56 w-full resize-none rounded-lg border border-edge bg-void p-3 font-mono text-[11px] leading-relaxed text-ink placeholder:text-mute focus:border-accent/50 focus:outline-none"
+      />
+      {slots.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1.5 text-[10px] font-mono tracking-widest text-mute">
+            SLOT TERDETEKSI ({slots.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {slots.map((s) => (
+              <span
+                key={s}
+                className="rounded border border-accent/25 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent-soft"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={saveText}
+          disabled={busy}
+          className="btn btn-primary disabled:opacity-50"
+        >
+          {busy ? "…" : "Simpan"}
+        </button>
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-edge px-4 py-2 text-xs text-mute hover:text-ink hover:border-accent/40 transition">
+          Upload PDF
+          <input
+            type="file"
+            accept=".pdf,.txt"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadPdf(f);
+            }}
+          />
+        </label>
+        {msg && <span className="text-[11px] text-mute">{msg}</span>}
+      </div>
+    </Card>
+  );
+}
+
+function Card({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="card p-5">
+      <div className="mb-4">
+        <div className="eyebrow">
+          {title}
+        </div>
+        {hint && <div className="mt-0.5 text-[11px] text-mute">{hint}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ========================= Pipeline Board ========================= */
+
+type Video = {
+  id: number;
+  stage: string;
+  source_url: string | null;
+  local_ref: string | null;
+  duration_s: number | null;
+  ref_score: number | null;
+  ref_notes: string | null;
+  shortcode: string | null;
+  views: number | null;
+  views_per_hour: number | null;
+  caption: string | null;
+  creator: string | null;
+  output_480: string | null;
+  output_1080: string | null;
+  qc_status: string | null;
+  gen_error?: string | null;
+  gen_engine?: string | null;
+  hf_request_id?: string | null;
+  master_prompt?: string | null;
+  prompt_used?: string | null;
+  idea_summary?: string | null;
+  ingest_order?: string | null;
+};
+
+const ENGINE_LABEL: Record<string, string> = {
+  "seedance": "Seedance 2.5",
+  "seedance-2.5": "Seedance 2.5",
+  "wan-prime": "Wan Prime",
+  "wan": "Wan 3.0",
+  "genjutsu": "Genjutsu",
+  "genjutsu-light": "Genjutsu Light",
+};
+
+const STAGES = [
+  { key: "inbox", label: "INBOX", sub: "viral masuk" },
+  { key: "shortlist", label: "SHORTLIST", sub: "ref-fit ✅" },
+  { key: "generating", label: "GENERATING", sub: "720p" },
+  { key: "qc", label: "QC", sub: "OK / Revisi" },
+  { key: "done", label: "DONE", sub: "1080p HD" },
+];
+
+function fmtViews(n: number | null) {
+  if (!n) return "–";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
+  return String(n);
+}
+
+function PipelineBoard({ persona, view = "pipeline" }: { persona: Persona; view?: "refs" | "pipeline" }) {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [ingesting, setIngesting] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  // Free-mode: persona can pull refs from ANY viral cluster (not locked to one).
+  const isFree = persona.niche === "freestyle";
+  // Idea-only: NO viral cluster AND not freestyle → LLM invents fresh ideas from
+  // the master prompt (no ref video). image-to-video, fixed Seedance 2.5.
+  const isIdeaOnly = !persona.viral_cluster_slug && !isFree;
+  const [ideaBusy, setIdeaBusy] = useState(false);
+  const [dailyAuto, setDailyAuto] = useState(!!persona.daily_auto);
+  useEffect(() => setDailyAuto(!!persona.daily_auto), [persona.id, persona.daily_auto]);
+  const [uploadingRef, setUploadingRef] = useState(false);
+  const [clusters, setClusters] = useState<{ slug: string; name: string }[]>([]);
+  const [pickCluster, setPickCluster] = useState<string>("");
+  // Sort order buat Tarik Viral: "velocity" (paling rame) | "date" (paling baru).
+  const [order, setOrder] = useState<"velocity" | "date">("velocity");
+
+  useEffect(() => {
+    if (!isFree) return;
+    fetch("/api/clusters", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setClusters(d.clusters || []))
+      .catch(() => {});
+  }, [isFree]);
+
+  const load = useCallback(async () => {
+    const r = await fetch(`/api/personas/${persona.id}/videos`, {
+      cache: "no-store",
+    });
+    setVideos(await r.json());
+    setLoading(false);
+  }, [persona.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // auto-poll while any video is generating (async render tracking)
+  const anyGenerating = videos.some((v) => v.stage === "generating");
+  useEffect(() => {
+    if (!anyGenerating) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [anyGenerating, load]);
+
+  async function ingest() {
+    if (isFree && !pickCluster) { setMsg("Pilih cluster dulu."); return; }
+    setIngesting(true);
+    setMsg(null);
+    const r = await fetch(`/api/personas/${persona.id}/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(isFree ? { limit: 8, cluster: pickCluster, order } : { limit: 8, order }),
+    });
+    const d = await r.json();
+    setIngesting(false);
+    if (d.error) setMsg("Error: " + d.error);
+    else setMsg(`+${d.added} ditarik · ${d.skipped} dup · ${d.failed} gagal`);
+    await load();
+  }
+
+  // Toggle auto harian jam 11:00 (scripts/daily_auto.mjs baca personas.daily_auto).
+  async function toggleDailyAuto() {
+    const next = !dailyAuto;
+    setDailyAuto(next);
+    const r = await fetch(`/api/personas/${persona.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ daily_auto: next ? 1 : 0 }),
+    });
+    if (!r.ok) {
+      setDailyAuto(!next);
+      setMsg("Error: gagal simpan auto harian");
+    }
+  }
+
+  const dailyAutoButton = (
+    <button
+      onClick={toggleDailyAuto}
+      role="switch"
+      aria-checked={dailyAuto}
+      className={`btn px-4 py-2 text-xs font-semibold ${dailyAuto ? "btn-accent" : "btn-ghost"}`}
+      title={`Kalau ON: tiap hari jam 11:00 ${isIdeaOnly
+        ? `bikin 1 ide baru lalu generate ${persona.render_res || "720p"}`
+        : `tarik ref terbaru, pilih yang paling rame (maks 27 detik), generate ${persona.render_res || "720p"}`}, hasilnya masuk ${persona.skip_qc ? "HASIL (tanpa QC)" : "QC"}. Terakhir: ${persona.daily_auto_status || "belum pernah"}`}
+    >
+      ⏰ Auto 11:00: {dailyAuto ? "ON" : "OFF"}
+    </button>
+  );
+
+  // Idea-only: minta LLM bikin 1 ide baru (dijamin gak sama) dari master prompt.
+  // Bikin draft editable di SHORTLIST — gak langsung generate (no cost).
+  async function genIdea() {
+    setIdeaBusy(true);
+    setMsg(null);
+    const r = await fetch(`/api/personas/${persona.id}/generate-idea`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const d = await r.json();
+    setIdeaBusy(false);
+    if (d.error) setMsg("Error: " + d.error);
+    else setMsg(`💡 ide baru: ${d.summary} (sim ${d.sim}) → cek SHORTLIST, edit prompt, baru gas`);
+    await load();
+  }
+
+  // Manual ref upload: drop your OWN video into INBOX (persona pakai cluster).
+  async function uploadRef(file: File) {
+    setUploadingRef(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch(`/api/personas/${persona.id}/upload-ref`, { method: "POST", body: fd });
+    const d = await r.json();
+    setUploadingRef(false);
+    if (d.error) setMsg("Error: " + d.error);
+    else setMsg(`⬆ ref manual masuk INBOX (${Math.round(d.duration_s || 0)}s) → pilih buat dipakai`);
+    await load();
+  }
+
+  async function move(v: Video, stage: string) {
+    await fetch(`/api/personas/${persona.id}/videos`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video_id: v.id, stage }),
+    });
+    await load();
+  }
+
+  async function del(v: Video) {
+    await fetch(`/api/personas/${persona.id}/videos?video_id=${v.id}`, {
+      method: "DELETE",
+    });
+    await load();
+  }
+
+  const [genMsg, setGenMsg] = useState<string | null>(null);
+
+  async function generate(v: Video, engine: string, resolution: string = "720p", story: boolean = false, variation: string = "", duration: number = 10) {
+    setGenMsg(null);
+    const r = await fetch(`/api/personas/${persona.id}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video_id: v.id, engine, resolution, story, variation, duration }),
+    });
+    const d = await r.json();
+    if (d.error) setGenMsg("✗ " + (d.detail || d.error).slice(0, 120));
+    else setGenMsg(`⚡ ${engine} ${resolution}${story ? ` story ${duration}s` : ""} jalan di background…`);
+    await load();
+  }
+
+  const byStage = (s: string) => videos.filter((v) => v.stage === s);
+
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoMsg, setAutoMsg] = useState<string | null>(null);
+  const [autoEngine, setAutoEngine] = useState(persona.auto_engine || "");
+  async function startAuto() {
+    setAutoBusy(true);
+    setAutoMsg(null);
+    const r = await fetch(`/api/personas/${persona.id}/auto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ count: 1 }),
+    });
+    const d = await r.json();
+    setAutoMsg(d.error ? "✗ " + d.error : "⚡ AUTO jalan — pantau board");
+    setAutoBusy(false);
+    setTimeout(load, 2000);
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-[11px] text-mute">
+          {isFree ? (
+            <span className="rounded-md bg-accent/10 px-2 py-0.5 font-semibold text-accent-soft">
+              FREESTYLE · ref bebas dari semua cluster · engine 🔒 Seedance 2.5
+            </span>
+          ) : (
+            <>
+              Cluster:{" "}
+              <span className="font-mono text-accent-soft">
+                {persona.viral_cluster_slug || "(belum di-set)"}
+              </span>
+            </>
+          )}
+          {msg && <span className="ml-3 text-mute">· {msg}</span>}
+          {autoMsg && <span className="ml-3 text-accent-soft">· {autoMsg}</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          {isIdeaOnly ? (
+            <>
+              <span className="rounded-lg border border-edge bg-void px-3 py-2 text-xs text-sub"
+                title="Mode ide murni: tanpa ref viral. LLM bikin ide dari master prompt, image-to-video, karakter dikunci.">
+                💡 IDE MURNI · engine 🔒 Seedance 2.5 (i2v)
+              </span>
+              {dailyAutoButton}
+              <button
+                onClick={genIdea}
+                disabled={ideaBusy}
+                className="btn btn-accent px-4 py-2 text-xs disabled:opacity-40"
+                title="LLM bikin 1 ide baru dari master prompt (dijamin gak pernah sama). Muncul di SHORTLIST, bisa edit sebelum generate."
+              >
+                {ideaBusy ? "Mikir ide…" : "💡 Generate Ide"}
+              </button>
+            </>
+          ) : (
+          <>
+          {isFree && (
+            <select
+              value={pickCluster}
+              onChange={(e) => setPickCluster(e.target.value)}
+              title="Pilih cluster viral mana yang mau ditarik ref-nya"
+              className="rounded-lg border border-edge bg-void px-2 py-2 text-xs text-sub focus:border-accent/50 focus:outline-none"
+            >
+              <option value="">Pilih cluster…</option>
+              {clusters.map((c) => (
+                <option key={c.slug} value={c.slug}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          {!isFree && (
+          <span className="rounded-lg border border-edge bg-void px-3 py-2 text-xs text-sub"
+            title="Model fix persona ini (diset pas bikin persona). Dipakai di GENERATE AUTO + generate manual.">
+            Model: <span className="font-semibold text-accent-soft">{ENGINE_LABEL[persona.auto_engine || ""] || "Auto (RAG)"}</span>
+          </span>
+          )}
+          <select
+            value={order}
+            onChange={(e) => setOrder(e.target.value as "velocity" | "date")}
+            title="Urutkan ref viral: paling rame (velocity) atau paling baru (date)"
+            className="rounded-lg border border-edge bg-void px-2 py-2 text-xs text-sub focus:border-accent/50 focus:outline-none"
+          >
+            <option value="velocity">🔥 Paling Rame</option>
+            <option value="date">🆕 Paling Baru</option>
+          </select>
+          <button
+            onClick={ingest}
+            disabled={ingesting || (isFree ? !pickCluster : !persona.viral_cluster_slug)}
+            className="btn btn-ghost text-xs font-semibold disabled:opacity-40"
+          >
+            {ingesting ? "Menarik viral…" : "⬇ Tarik Viral (MCP)"}
+          </button>
+          {!isFree && persona.viral_cluster_slug && dailyAutoButton}
+          {!isFree && (
+          <button
+            onClick={startAuto}
+            disabled={autoBusy || !persona.viral_cluster_slug}
+            className="btn btn-accent px-4 py-2 text-xs disabled:opacity-40"
+            title="Full-auto: ingest → pilih ref → prompt → generate → QC, tanpa sentuhan"
+          >
+            {autoBusy ? "Memulai…" : "⚡ GENERATE AUTO VIDEO"}
+          </button>
+          )}
+          </>
+          )}
+        </div>
+      </div>
+
+      {view === "refs" ? (
+        /* PILIH REF — grid INBOX dari MCP + upload manual */
+        <div>
+          {!isIdeaOnly && (
+            <div className="mb-3 flex items-center gap-2">
+              <label className={`btn btn-ghost cursor-pointer text-xs font-semibold ${uploadingRef ? "opacity-40 pointer-events-none" : ""}`}>
+                {uploadingRef ? "Mengupload…" : "⬆ Upload Ref Sendiri"}
+                <input
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRef(f); e.currentTarget.value = ""; }}
+                />
+              </label>
+              <span className="text-[10px] text-mute">drop video-mu sendiri jadi reference (mp4/mov) — masuk INBOX, lalu pilih</span>
+            </div>
+          )}
+          {loading && <div className="text-[11px] text-mute">Loading…</div>}
+          {!loading && byStage("inbox").length === 0 && (
+            <div className="card flex flex-col items-center justify-center gap-2 py-16 text-center">
+              <div className="text-sm text-sub">INBOX kosong</div>
+              <div className="text-[11px] text-mute">Klik <span className="text-accent-soft">Tarik Viral (MCP)</span> buat narik ref viral baru{!isIdeaOnly ? <>, atau <span className="text-accent-soft">Upload Ref Sendiri</span></> : ""}.</div>
+            </div>
+          )}
+          <div className="stagger grid grid-cols-4 gap-3 xl:grid-cols-6 2xl:grid-cols-7">
+            {byStage("inbox").map((v) => (
+              <RefCard
+                key={v.id}
+                v={v}
+                personaId={persona.id}
+                onPick={async (vid) => { await move(vid, "shortlist"); }}
+                onDelete={del}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* PIPELINE — baris per ref terpilih */
+        <div className="stagger flex flex-col gap-2.5">
+          {loading && <div className="text-[11px] text-mute">Loading…</div>}
+          {!loading && byStage("shortlist").length + byStage("generating").length + byStage("qc").length + byStage("done").length === 0 && (
+            <div className="card flex flex-col items-center justify-center gap-2 py-16 text-center">
+              <div className="text-sm text-sub">Belum ada ref terpilih</div>
+              <div className="text-[11px] text-mute">Pilih ref dulu dari tab <span className="text-accent-soft">Pilih Ref</span>, atau klik GENERATE AUTO VIDEO.</div>
+            </div>
+          )}
+          {["shortlist", "generating", "qc", "done"].flatMap((stage) =>
+            byStage(stage).map((v) => (
+              <PipelineRow
+                key={v.id}
+                v={v}
+                personaId={persona.id}
+                free={isFree}
+                ideaOnly={isIdeaOnly}
+                fixedEngine={persona.auto_engine || ""}
+                renderRes={persona.render_res || "720p"}
+                onMove={move}
+                onDelete={del}
+                onGenerate={generate}
+                onReload={load}
+                genBusy={v.stage === "generating"}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact INBOX ref card for the "Pilih Ref" page
+function RefCard({
+  v,
+  personaId,
+  onPick,
+  onDelete,
+}: {
+  v: Video;
+  personaId: string;
+  onPick: (v: Video) => void;
+  onDelete: (v: Video) => void;
+}) {
+  const src = v.local_ref ? `/api/media/${personaId}/${v.local_ref}` : null;
+  const tooLong = (v.duration_s || 0) > 30;
+  return (
+    <div className="card card-hover flex flex-col overflow-hidden">
+      <div className="relative aspect-[9/16] bg-void">
+        {src ? (
+          <video src={src} controls preload="metadata" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-[10px] text-faint">no media</div>
+        )}
+        {tooLong && (
+          <span className="absolute left-1.5 top-1.5 rounded bg-bad/80 px-1.5 py-0.5 text-[9px] text-white">&gt;30s</span>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-1 p-2">
+        <div className="flex items-center justify-between text-[10px] text-faint">
+          <span>{v.duration_s ? `${Math.round(v.duration_s)}s` : "–"}</span>
+          <span>👁 {fmtViews(v.views)}</span>
+          {v.views_per_hour ? <span className="text-accent-soft">{Math.round(v.views_per_hour).toLocaleString()}/h</span> : null}
+        </div>
+        {v.creator && <div className="truncate text-[10px] text-mute">@{v.creator}</div>}
+        {v.caption && <div className="line-clamp-2 text-[10px] leading-snug text-mute/80">{v.caption}</div>}
+        <div className="mt-auto flex gap-1 pt-1">
+          <button onClick={() => onPick(v)} className="btn btn-primary flex-1 px-2 py-1 text-[10px]">✓ pilih ref</button>
+          <button onClick={() => onDelete(v)} className="btn btn-ghost px-2 py-1 text-[10px]">✕</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// PROGRESS STAGES in a row (inbox excluded — that's the refs page)
+const ROW_STAGES = [
+  { key: "shortlist", label: "Ref" },
+  { key: "generating", label: "Generate" },
+  { key: "qc", label: "QC" },
+  { key: "done", label: "Done" },
+];
+
+// Module-level so they're STABLE across PipelineRow re-renders (defining them
+// inside the component remounts inputs on every keystroke → focus loss).
+function StageCol({ label, idx, stageIdx, genBusy, action, children }: { label: string; idx: number; stageIdx: number; genBusy?: boolean; action?: React.ReactNode; children: React.ReactNode }) {
+  const active = idx <= stageIdx;
+  return (
+    <div className="flex min-w-0 flex-col items-center">
+      <div className="relative mx-auto aspect-[9/16] w-full max-h-[340px] max-w-[195px] overflow-hidden rounded-xl border border-edgeSoft bg-void">{children}</div>
+      <div className={`mt-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${active ? "text-accent-soft" : "text-faint"}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${idx < stageIdx ? "bg-accent" : idx === stageIdx ? "bg-accent shadow-[0_0_6px_rgba(232,177,76,0.6)]" : "bg-edge"} ${genBusy && idx === stageIdx ? "animate-pulse" : ""}`} />
+        {label}
+      </div>
+      {action && <div className="mt-2 flex w-full flex-col gap-1">{action}</div>}
+    </div>
+  );
+}
+function StageVid({ s, muted = false }: { s: string; muted?: boolean }) {
+  return <video src={s} className="h-full w-full object-contain" controls muted={muted} playsInline preload="metadata" />;
+}
+function StageEmpty({ t }: { t: string }) {
+  return <div className="flex h-full items-center justify-center px-1 text-center text-[9px] text-faint">{t}</div>;
+}
+function StageLoading() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1 text-[9px] text-accent-soft">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />render…
+    </div>
+  );
+}
+
+// Freestyle per-ref setup: upload 1-8 character images + master prompt template
+// scoped to THIS ref only. Stored on the video (video_id-scoped char images +
+// videos.master_prompt). Normal personas never render this.
+function FreestyleRefSetup({ personaId, v }: { personaId: string; v: Video }) {
+  const [imgs, setImgs] = useState<any[]>([]);
+  const [prompt, setPrompt] = useState(v.master_prompt || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const loadImgs = useCallback(async () => {
+    const r = await fetch(`/api/personas/${personaId}/character?video_id=${v.id}`, { cache: "no-store" });
+    setImgs(await r.json());
+  }, [personaId, v.id]);
+  useEffect(() => { loadImgs(); }, [loadImgs]);
+
+  async function upload(file: File) {
+    setBusy(true); setMsg(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("video_id", String(v.id));
+    const r = await fetch(`/api/personas/${personaId}/character`, { method: "POST", body: fd });
+    const d = await r.json();
+    setBusy(false);
+    if (d.error) setMsg(d.error);
+    else { if (d.warn) setMsg(d.warn); await loadImgs(); }
+  }
+
+  async function delImg(imgId: number) {
+    await fetch(`/api/personas/${personaId}/character?img=${imgId}`, { method: "DELETE" });
+    await loadImgs();
+  }
+
+  async function savePrompt() {
+    setBusy(true); setMsg(null);
+    const r = await fetch(`/api/personas/${personaId}/videos`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video_id: v.id, master_prompt: prompt }),
+    });
+    setBusy(false);
+    setMsg(r.ok ? "prompt disimpan ✓" : "gagal simpan");
+  }
+
+  const slots = Array.from(new Set((prompt.match(/\[[^\]]+\]/g) || [])));
+  const ready = imgs.length > 0 && prompt.trim().length > 20;
+
+  return (
+    <div className="mb-2 rounded-lg border border-accent/30 bg-accent/[0.04] p-2">
+      <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-accent-soft">
+        Setup ref ini {ready ? "✓" : "· wajib isi"}
+      </div>
+
+      {/* character images */}
+      <div className="mb-1.5">
+        <div className="mb-1 flex flex-wrap gap-1">
+          {imgs.map((im) => (
+            <div key={im.id} className="group relative">
+              <img src={`/api/media/${personaId}/${im.rel_path}`} className="h-9 w-9 rounded object-cover" />
+              <button onClick={() => delImg(im.id)}
+                className="absolute -right-1 -top-1 hidden h-3.5 w-3.5 place-items-center rounded-full bg-bad text-[8px] text-white group-hover:grid">×</button>
+            </div>
+          ))}
+          {imgs.length < 8 && (
+            <label className="grid h-9 w-9 cursor-pointer place-items-center rounded border border-dashed border-edge text-[12px] text-faint hover:border-accent/50 hover:text-accent">
+              +
+              <input type="file" accept="image/*" className="hidden" disabled={busy}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.currentTarget.value = ""; }} />
+            </label>
+          )}
+        </div>
+        <div className="text-[8px] text-faint">{imgs.length}/8 foto character</div>
+      </div>
+
+      {/* master prompt */}
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="master prompt ref ini (pakai slot [EXPRESSION], [LOCATION], [ACTION_1]…)"
+        rows={3}
+        className="w-full rounded border border-edge bg-void px-1.5 py-1 text-[9px] text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none"
+      />
+      {slots.length > 0 && (
+        <div className="mt-0.5 text-[8px] text-mute">slot: {slots.join(" ")}</div>
+      )}
+      <button onClick={savePrompt} disabled={busy}
+        className="btn btn-ghost mt-1 w-full px-1 py-1 text-[9px] disabled:opacity-40">
+        {busy ? "…" : "💾 Simpan prompt ref"}
+      </button>
+      {msg && <div className="mt-1 text-[8px] text-warn">{msg}</div>}
+    </div>
+  );
+}
+
+function PipelineRow({
+  v,
+  personaId,
+  free = false,
+  ideaOnly = false,
+  fixedEngine = "",
+  renderRes = "720p",
+  onMove,
+  onDelete,
+  onGenerate,
+  onReload,
+  genBusy,
+}: {
+  v: Video;
+  personaId: string;
+  free?: boolean;
+  ideaOnly?: boolean;
+  fixedEngine?: string;
+  renderRes?: string;
+  onMove: (v: Video, stage: string) => void;
+  onDelete: (v: Video) => void;
+  onGenerate: (v: Video, engine: string, resolution: string, story?: boolean, variation?: string, duration?: number) => void;
+  onReload?: () => void;
+  genBusy?: boolean;
+}) {
+  // Engine is FIXED per persona (set at creation). Free-mode => Seedance 2.5.
+  // Non-free => persona.auto_engine; falls back to seedance if unset.
+  const lockedEngine = free ? "seedance" : (fixedEngine || "seedance");
+  const [engine, setEngine] = useState(lockedEngine);
+  // Resolution is set per persona (personas.render_res); the server enforces it.
+  const resolution = renderRes;
+  const [story, setStory] = useState(false);
+  const [variation, setVariation] = useState("");
+  const [storyDur, setStoryDur] = useState(10);
+  // Idea-only: editable prompt + duration before generate.
+  const [ideaPrompt, setIdeaPrompt] = useState(v.prompt_used || "");
+  const [ideaDur, setIdeaDur] = useState(5);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const stageIdx = ROW_STAGES.findIndex((s) => s.key === v.stage);
+  const refSrc = v.local_ref ? `/api/media/${personaId}/${v.local_ref}` : null;
+  const outRel = v.output_1080 || v.output_480;
+  const outSrc = outRel ? `/api/media/${personaId}/${outRel}` : null;
+  const isGenerating = v.stage === "generating";
+  const isDone = v.stage === "done";
+
+  // aksi di bawah REFERENSI (generate) — hanya saat shortlist
+  const refAction = v.stage === "shortlist" ? (
+    ideaOnly ? (
+      <>
+        <div className="text-[10px] font-semibold text-accent-soft leading-snug">💡 {v.idea_summary || "ide"}</div>
+        <textarea
+          value={ideaPrompt}
+          onChange={(e) => setIdeaPrompt(e.target.value)}
+          disabled={genBusy || savingPrompt}
+          rows={6}
+          placeholder="prompt ide (bisa diedit)…"
+          className="w-full rounded border border-edge bg-void px-1.5 py-1 text-[9px] leading-snug text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none"
+        />
+        <div className="flex gap-1">
+          <div className="flex flex-1 items-center justify-center rounded border border-accent/40 bg-accent/10 px-1 py-1 text-[9px] font-semibold text-accent-soft">
+            🔒 Seedance 2.5
+          </div>
+          <select value={ideaDur} onChange={(e) => setIdeaDur(Number(e.target.value))} disabled={genBusy}
+            className="rounded border border-edge bg-void px-1 py-1 text-[9px] text-ink focus:border-accent/50 focus:outline-none">
+            <option value={4}>4s</option>
+            <option value={5}>5s</option>
+            <option value={10}>10s</option>
+            <option value={15}>15s</option>
+            <option value={20}>20s</option>
+            <option value={30}>30s</option>
+          </select>
+          <div className="flex items-center rounded border border-edge bg-void px-1.5 py-1 text-[9px] font-semibold text-sub">{resolution}</div>
+        </div>
+        <button
+          onClick={async () => {
+            // Save the (possibly edited) prompt first, then generate i2v.
+            setSavingPrompt(true);
+            await fetch(`/api/personas/${personaId}/videos`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ video_id: v.id, prompt_used: ideaPrompt }),
+            });
+            setSavingPrompt(false);
+            onGenerate({ ...v, prompt_used: ideaPrompt }, "seedance", resolution, false, "", ideaDur);
+          }}
+          disabled={genBusy || savingPrompt || ideaPrompt.trim().length < 20}
+          className="btn btn-primary w-full px-2 py-1 text-[9px] disabled:opacity-40">
+          {genBusy ? "Generating…" : savingPrompt ? "Nyimpen…" : `⚡ Generate ${resolution} ${ideaDur}s`}
+        </button>
+        <button onClick={() => onDelete(v)} className="text-[9px] text-faint hover:text-bad">🗑 buang ide</button>
+      </>
+    ) : (
+    <>
+      {free && <FreestyleRefSetup personaId={personaId} v={v} />}
+      {/* mode: ikut ref vs story baru */}
+      <div className="flex gap-1">
+        <button onClick={() => setStory(false)} disabled={genBusy}
+          className={`flex-1 rounded border px-1 py-1 text-[9px] transition ${!story ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-faint"}`}>
+          🎬 Ikut Ref
+        </button>
+        <button onClick={() => setStory(true)} disabled={genBusy}
+          className={`flex-1 rounded border px-1 py-1 text-[9px] transition ${story ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-faint"}`}>
+          ✨ Story Baru
+        </button>
+      </div>
+      {story && (
+        <>
+          <input value={variation} onChange={(e) => setVariation(e.target.value)} disabled={genBusy}
+            placeholder="variasi: mis. ayam→bebek (opsional)"
+            className="w-full rounded border border-edge bg-void px-1.5 py-1 text-[9px] text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none" />
+          <select value={storyDur} onChange={(e) => setStoryDur(Number(e.target.value))} disabled={genBusy}
+            className="w-full rounded border border-edge bg-void px-1 py-1 text-[9px] text-ink focus:border-accent/50 focus:outline-none">
+            <option value={5}>durasi 5s</option>
+            <option value={10}>durasi 10s</option>
+            <option value={15}>durasi 15s</option>
+            <option value={20}>durasi 20s</option>
+            <option value={30}>durasi 30s</option>
+          </select>
+        </>
+      )}
+      <div className="flex gap-1">
+        {/* engine is FIXED per persona (set at creation) — locked label, no picker */}
+        <div className="flex flex-1 items-center justify-center rounded border border-accent/40 bg-accent/10 px-1 py-1 text-[9px] font-semibold text-accent-soft">
+          🔒 {ENGINE_LABEL[lockedEngine] || "Seedance 2.5"}
+        </div>
+        <div className="flex items-center rounded border border-edge bg-void px-1.5 py-1 text-[9px] font-semibold text-sub">{resolution}</div>
+      </div>
+      {story && !variation.trim() && (
+        <div className="text-[9px] text-warn">⚠ isi variasi dulu (biar gak sama persis ref)</div>
+      )}
+      <button onClick={() => onGenerate(v, engine, resolution, story, variation, storyDur)} disabled={genBusy || (story && !variation.trim())}
+        className="btn btn-primary w-full px-2 py-1 text-[9px] disabled:opacity-40">
+        {genBusy ? "Generating…" : `⚡ Generate ${resolution}${story ? ` story ${storyDur}s` : ""}`}
+      </button>
+      <button onClick={() => onMove(v, "inbox")} className="text-[9px] text-faint hover:text-mute">↩ inbox</button>
+    </>
+    )
+  ) : null;
+
+  // aksi di bawah QC (OK/revisi/ulang) — saat qc
+  const qcAction = v.stage === "qc" ? (
+    <>
+      <button onClick={() => onMove(v, "done")} className="btn btn-accent w-full px-2 py-1 text-[10px]">OK ✓</button>
+      <div className="flex gap-1">
+        <button onClick={() => onMove(v, "shortlist")} className="btn btn-ghost flex-1 px-1 py-1 text-[9px]">revisi</button>
+        <button onClick={() => onMove(v, "inbox")} className="btn btn-ghost flex-1 px-1 py-1 text-[9px]">ulang</button>
+      </div>
+    </>
+  ) : null;
+
+  // aksi di bawah HASIL (buka video) — saat done
+  const hasilAction = v.stage === "done" && outSrc ? (
+    <a href={outSrc} target="_blank" className="btn btn-ghost w-full px-2 py-1 text-center text-[9px] text-accent-soft">buka ↗</a>
+  ) : null;
+
+  return (
+    <div className="card card-hover p-4">
+      {v.gen_error && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-bad/30 bg-bad/[0.07] px-3 py-2 text-[11px] text-bad">
+          <span className="mt-[1px] shrink-0">⚠</span>
+          <span className="leading-snug">{v.gen_error}</span>
+          {v.hf_request_id && /timeout|network|download/i.test(v.gen_error) && (
+            <button
+              onClick={async () => {
+                const r = await fetch(`/api/personas/${personaId}/recover`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ video_id: v.id }),
+                });
+                if (!r.ok) alert((await r.json().catch(() => ({}))).error || "gagal");
+                onReload?.();
+              }}
+              className="ml-auto shrink-0 rounded border border-bad/40 px-2 py-0.5 text-[10px] font-semibold hover:bg-bad/10"
+              title="Ambil hasil render yang sudah jalan di Higgsfield, tanpa generate ulang (tanpa biaya)"
+            >
+              🔄 Cek Ulang Hasil
+            </button>
+          )}
+        </div>
+      )}
+      <div className="mx-auto grid max-w-[920px] grid-cols-4 gap-6">
+        <StageCol label="referensi" idx={0} stageIdx={stageIdx} genBusy={genBusy} action={refAction}>
+          {refSrc ? <StageVid s={refSrc} muted /> : ideaOnly ? (
+            <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center">
+              <div className="text-xl">💡</div>
+              <div className="text-[9px] leading-snug text-sub">{v.idea_summary || "ide murni"}</div>
+            </div>
+          ) : <StageEmpty t="no ref" />}
+        </StageCol>
+        <StageCol label="proses" idx={1} stageIdx={stageIdx} genBusy={genBusy}>
+          {isGenerating ? <StageLoading /> : outSrc ? <StageEmpty t="✓ selesai" /> : <StageEmpty t="—" />}
+        </StageCol>
+        <StageCol label="qc" idx={2} stageIdx={stageIdx} genBusy={genBusy} action={qcAction}>
+          {outSrc ? <StageVid s={outSrc} /> : isGenerating ? <StageLoading /> : <StageEmpty t="belum ada" />}
+        </StageCol>
+        <StageCol label="hasil" idx={3} stageIdx={stageIdx} genBusy={genBusy} action={hasilAction}>
+          {isDone && outSrc ? <StageVid s={outSrc} /> : <StageEmpty t={outSrc ? "nunggu OK" : "belum ada"} />}
+        </StageCol>
+      </div>
+    </div>
+  );
+}
+
+function Btn({
+  children,
+  onClick,
+  ok,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  ok?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
+        ok
+          ? "bg-accent/20 text-accent-soft hover:bg-accent/30"
+          : "border border-edge text-mute hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ========================= Add Niche Modal ========================= */
+
+function AddNicheModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [niche, setNiche] = useState("");
+  const [cluster, setCluster] = useState("");
+  const [clusters, setClusters] = useState<any[]>([]);
+  const [platform, setPlatform] = useState("instagram");
+  const [aspect, setAspect] = useState("9:16");
+  const [charMode, setCharMode] = useState("single");
+  const [audioMode, setAudioMode] = useState("auto");
+  const [autoEngine, setAutoEngine] = useState(""); // fix model per persona ("" = Auto)
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/clusters", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setClusters(d.clusters || []))
+      .catch(() => {});
+  }, []);
+
+  async function create() {
+    if (!name.trim() || !niche.trim()) {
+      setErr("Nama & niche wajib diisi");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const r = await fetch("/api/personas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, niche, platform, aspect, char_mode: charMode, audio_mode: audioMode, viral_cluster_slug: cluster || null, auto_engine: autoEngine || null }),
+    });
+    const data = await r.json();
+    setBusy(false);
+    if (data.error) setErr(data.error);
+    else onCreated(data.id);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-sm font-semibold tracking-wide text-ink">
+          Tambah Niche / Persona
+        </h2>
+        <p className="mt-1 text-[11px] text-mute">
+          Bikin folder + config persona baru. Master prompt & character diisi
+          setelah ini.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          <Field label="Nama persona">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Kepin Animal"
+              className="input"
+            />
+          </Field>
+          <Field label="Kategori viral (ViralEngine cluster)">
+            <select
+              value={cluster}
+              onChange={(e) => {
+                const slug = e.target.value;
+                setCluster(slug);
+                // auto-fill niche from the cluster's base word if empty
+                if (slug && !niche.trim()) {
+                  setNiche(slug.split("-")[0]);
+                }
+              }}
+              className="input"
+            >
+              <option value="">— pilih kategori —</option>
+              {clusters.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.name}{c.total ? ` (${c.total})` : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Niche">
+            <input
+              value={niche}
+              onChange={(e) => setNiche(e.target.value)}
+              placeholder="animal"
+              className="input"
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Platform">
+              <select
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                className="input"
+              >
+                <option value="instagram">Instagram</option>
+                <option value="tiktok" disabled>
+                  TikTok (nanti)
+                </option>
+                <option value="youtube" disabled>
+                  YouTube (nanti)
+                </option>
+              </select>
+            </Field>
+            <Field label="Aspect">
+              <select
+                value={aspect}
+                onChange={(e) => setAspect(e.target.value)}
+                className="input"
+              >
+                <option value="9:16">9:16 (reels)</option>
+                <option value="1:1">1:1</option>
+                <option value="16:9">16:9</option>
+              </select>
+            </Field>
+          </div>
+
+          <Field label="Tipe karakter">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCharMode("single")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-left text-[12px] transition ${charMode === "single" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub hover:border-edge"}`}
+              >
+                <div className="font-medium">👤 Single</div>
+                <div className="text-[10px] text-mute">1 karakter</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCharMode("duo")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-left text-[12px] transition ${charMode === "duo" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub hover:border-edge"}`}
+              >
+                <div className="font-medium">👥 Duo</div>
+                <div className="text-[10px] text-mute">2 karakter</div>
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Suara (audio)">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setAudioMode("auto")}
+                className={`flex-1 rounded-lg border px-2 py-2 text-center text-[11px] transition ${audioMode === "auto" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub"}`}>
+                🔊 Auto<div className="text-[9px] text-mute">AI bikin suara</div>
+              </button>
+              <button type="button" onClick={() => setAudioMode("ref")}
+                className={`flex-1 rounded-lg border px-2 py-2 text-center text-[11px] transition ${audioMode === "ref" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub"}`}>
+                🎙️ Ref<div className="text-[9px] text-mute">upload suara</div>
+              </button>
+              <button type="button" onClick={() => setAudioMode("off")}
+                className={`flex-1 rounded-lg border px-2 py-2 text-center text-[11px] transition ${audioMode === "off" ? "border-accent/50 bg-accent/10 text-ink" : "border-edge text-sub"}`}>
+                🔇 Bisu<div className="text-[9px] text-mute">tanpa suara</div>
+              </button>
+            </div>
+            {audioMode !== "off" && (
+              <p className="mt-1.5 text-[10px] text-accent-soft">⚡ pakai suara → otomatis engine Seedance 2.5</p>
+            )}
+          </Field>
+
+          <Field label="Model generate (fix per persona)">
+            <select
+              value={autoEngine}
+              onChange={(e) => setAutoEngine(e.target.value)}
+              className="input"
+              disabled={audioMode !== "off" || !cluster}
+            >
+              <option value="">Auto (sistem pilih)</option>
+              <option value="seedance">Seedance 2.5</option>
+              <option value="wan-prime">Wan Prime</option>
+              <option value="genjutsu">Genjutsu</option>
+              <option value="genjutsu-light">Genjutsu Light</option>
+            </select>
+            {!cluster ? (
+              <p className="mt-1.5 text-[10px] text-accent-soft">💡 tanpa kategori viral = mode IDE MURNI (image-to-video) → dikunci Seedance 2.5. Nanti pakai tombol "Generate Ide" di pipeline, karakter dikunci, ide dijamin gak pernah sama.</p>
+            ) : audioMode !== "off" ? (
+              <p className="mt-1.5 text-[10px] text-mute">dikunci Seedance 2.5 karena pakai suara</p>
+            ) : (
+              <p className="mt-1.5 text-[10px] text-mute">model tetap buat persona ini. Auto = sistem pilih via RAG.</p>
+            )}
+          </Field>
+        </div>
+
+        {err && <div className="mt-4 text-[11px] text-bad">{err}</div>}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="btn btn-ghost text-xs"
+          >
+            Batal
+          </button>
+          <button
+            onClick={create}
+            disabled={busy}
+            className="btn btn-primary disabled:opacity-50"
+          >
+            {busy ? "Membuat…" : "Buat Persona"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[10px] font-mono tracking-widest text-mute">
+        {label.toUpperCase()}
+      </span>
+      {children}
+    </label>
+  );
+}

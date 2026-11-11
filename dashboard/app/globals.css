@@ -4,41 +4,182 @@
 
 :root {
   color-scheme: dark;
+  --void: #0a0a0b;
+  --panel: #141416;
+  --edge: #26262b;
+  --accent: #e8b14c;
 }
 
 html, body {
-  background: #08080b;
-  color: #e7e7ea;
+  background: var(--void);
+  color: #f5f5f6;
   height: 100%;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-* {
-  box-sizing: border-box;
+* { box-sizing: border-box; }
+
+body {
+  /* layered aurora + grain — cinematic depth, kills flat template look */
+  background-image:
+    radial-gradient(1000px 560px at 12% -12%, rgba(232,177,76,0.07), transparent 58%),
+    radial-gradient(1300px 760px at 112% 8%, rgba(99,102,120,0.07), transparent 55%),
+    radial-gradient(900px 600px at 50% 120%, rgba(232,177,76,0.035), transparent 60%);
+  background-attachment: fixed;
+}
+/* ultra-fine film grain overlay */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #08080b; }
-::-webkit-scrollbar-thumb { background: #1c1c22; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #2a2a33; }
+/* Thin, quiet scrollbars (Linear-style) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #26262b; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #33333a; }
 
-/* subtle indigo glow for active elements */
-.glow-indigo {
-  box-shadow: 0 0 0 1px rgba(99,102,241,0.4), 0 0 24px -6px rgba(99,102,241,0.35);
+/* Selection */
+::selection { background: rgba(232,177,76,0.25); color: #fff; }
+
+/* ---- Typographic rhythm ---- */
+.eyebrow {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #77777f;
 }
 
+/* ---- Surfaces ---- */
+.card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 32%),
+    linear-gradient(180deg, #16161a, #121215);
+  border: 1px solid #202024;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 0 0 rgba(255,255,255,0.04) inset,
+    0 2px 4px -2px rgba(0,0,0,0.5),
+    0 12px 32px -16px rgba(0,0,0,0.7);
+}
+.card-hover {
+  transition: border-color 0.25s ease, transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s ease;
+}
+.card-hover:hover {
+  border-color: #3a3a42;
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 0 rgba(255,255,255,0.06) inset,
+    0 2px 8px -2px rgba(0,0,0,0.5),
+    0 24px 56px -20px rgba(0,0,0,0.85),
+    0 0 0 1px rgba(232,177,76,0.04);
+}
+
+/* ---- Inputs ---- */
 .input {
   width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid #1c1c22;
-  background: #08080b;
-  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #26262b;
+  background: #0e0e10;
+  padding: 0.55rem 0.8rem;
   font-size: 0.8125rem;
-  color: #e7e7ea;
+  color: #f5f5f6;
   outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .input:focus {
-  border-color: #6366f1;
+  border-color: #3a3a42;
+  box-shadow: 0 0 0 3px rgba(232,177,76,0.12);
 }
-.input::placeholder {
-  color: #8a8a93;
+.input::placeholder { color: #55555c; }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  border-radius: 10px;
+  font-size: 0.8125rem; font-weight: 500;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16,1,0.3,1);
+  white-space: nowrap;
 }
+.btn:active { transform: translateY(0.5px) scale(0.99); }
+.btn-primary {
+  background: #f5f5f6; color: #0a0a0b; font-weight: 600;
+}
+.btn-primary:hover { background: #fff; box-shadow: 0 6px 20px -8px rgba(255,255,255,0.3); }
+.btn-ghost {
+  background: #1a1a1d; color: #f5f5f6; border-color: #26262b;
+}
+.btn-ghost:hover { background: #222226; border-color: #33333a; }
+.btn-accent {
+  background: linear-gradient(180deg, #f0c874, #e8b14c); color: #241a07; font-weight: 600;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset, 0 8px 24px -10px rgba(232,177,76,0.5);
+}
+.btn-accent:hover { filter: brightness(1.05); }
+
+/* ---- Pills / chips ---- */
+.chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 11px; font-weight: 500;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  background: #1a1a1d; border: 1px solid #26262b; color: #b4b4bb;
+}
+
+/* ---- Focus ring (keyboard) ---- */
+*:focus-visible { outline: 2px solid rgba(232,177,76,0.5); outline-offset: 2px; border-radius: 6px; }
+
+/* Shimmer skeleton */
+.shimmer {
+  background: linear-gradient(90deg, #141416 25%, #1d1d21 50%, #141416 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* ---- Display typography (editorial contrast) ---- */
+.display {
+  font-family: var(--font-display), ui-sans-serif, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+.tracking-tightest { letter-spacing: -0.02em; }
+
+/* ---- Entrance animations (staggered, soft ease) ---- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.animate-fade-up { animation: fadeUp 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-scale-in { animation: scaleIn 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+/* stagger children: add .stagger to a parent, children fade-up in sequence */
+.stagger > * { animation: fadeUp 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.stagger > *:nth-child(7) { animation-delay: 0.26s; }
+.stagger > *:nth-child(8) { animation-delay: 0.30s; }
+
+/* respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ensure app sits above grain */
+#__next, main, aside, header { position: relative; z-index: 1; }

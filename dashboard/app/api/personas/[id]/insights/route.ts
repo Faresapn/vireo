@@ -92,8 +92,8 @@ export async function GET(
       auto_skip_480p: autoSkip480,
       preferred_engine: bestEngine,
       note: autoSkip480
-        ? `Niche '${niche}' konsisten OK first-try (${(firstTryRate * 100).toFixed(0)}%). Aman langsung 1080p.`
-        : `Belum cukup data / rate belum stabil (${total} keputusan). Tetap 480p draft dulu.`,
+        ? `Niche '${niche}' konsisten OK first-try (${(firstTryRate * 100).toFixed(0)}%).`
+        : `Belum cukup data / rate belum stabil (${total} keputusan).`,
     },
   });
 }

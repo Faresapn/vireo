@@ -19,6 +19,9 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { delegateToGo } from "./_go.mjs";
+
+delegateToGo("screen-ref", process.argv.slice(2));
 
 const STUDIO_ROOT = path.resolve(import.meta.dirname, "..");
 const DB_PATH = path.join(STUDIO_ROOT, "db", "studio.db");
@@ -38,12 +41,23 @@ function frames(refPath) {
   return out;
 }
 
-async function call(imgs) {
+// Extra penalties for Wan 3.0 Prime personas, from RAG history (decisions, Nov 2026):
+// every Wan render that failed or got "ulang" had group/contact motion, a ride camera,
+// or the face covered. Those refs were also long, so these lower the score; they don't reject.
+const WAN_RULES = `
+ENGINE NOTE: this persona renders on Wan 3.0 Prime. Subtract points for these (do not auto-reject, just lower the score):
+  - 3 or more people moving together as the action (group dance, line dance, crowd choreography): -25
+  - two people in physical contact or fighting (sparring, wrestling, kicks aimed at each other): -20
+  - the camera rides on a moving vehicle or thrill ride (rollercoaster, swing ride, car, boat): -15
+  - the main subject's face gets covered or hidden for part of the clip (powder, liquid, mask, food burst, hands): -15
+A background crowd that just stands or watches is fine and is not penalized.`;
+
+async function call(imgs, extraRules = "") {
   const images = imgs.map((f) => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(f).toString("base64")}` } }));
   const sys = `You rate how suitable a reference video is for AI character MOTION-TRANSFER (swapping the main person with a locked character).
 Return STRICT JSON only: {"score": <0-100>, "verdict": "<good|weak|bad>", "reason": "<short>"}
 
-HIGH score (70-100): the SAME clear single human is the main subject in ALL 3 frames, visible face/body, doing one continuous recognizable action, stable consistent setting. Easy to replace the person with our character.
+HIGH score (70-100): the SAME clear single human is the main subject in ALL 3 frames, visible face/body, doing one continuous recognizable action, stable consistent setting, fully clothed and family-friendly. Easy to copy with our character: simple readable motion, few props.
 MEDIUM (40-69): person present but partially (far, side, some POV), or shares focus with animal, minor cuts but same scene.
 LOW (0-39): reject these —
   - the 3 frames show DIFFERENT scenes/subjects (compilation / meme / montage) — e.g. frame1 person, frame2 food, frame3 landscape
@@ -51,8 +65,10 @@ LOW (0-39): reject these —
   - large overlay TEXT / captions / meme text
   - POV / hands-only / tiny-animal-only / crowd / abstract
   - chaotic rapid cuts, no single consistent subject
+  - CONTENT-FILTER RISK (score <= 35): the video engine rejects clips that could read as sexual even when innocent — the person lying down or curled up on a floor/bed with long objects pressed against their chest, lap or between their legs; straddling or grinding on something; body-hugging tight poses; suggestive dancing; swimwear, underwear, shirtless or revealing outfits; bathroom/bed scenes; two people in close body contact. Also weapons pointed at people, blood or injury.
 A compilation or meme-format clip is ALWAYS bad (score < 30) even if one frame has a person, because the subject is not consistent and the transfer will hallucinate.
-Judge across ALL 3 frames (start/mid/end): if the main subject or scene CHANGES between frames, score LOW. Output JSON only, no prose.`;
+Judge across ALL 3 frames (start/mid/end): if the main subject or scene CHANGES between frames, score LOW.${extraRules}
+Output JSON only, no prose.`;
   const payload = {
     model: LLM_MODEL, max_tokens: 200, stream: false,
     messages: [
@@ -102,7 +118,9 @@ async function main() {
 
   const fr = frames(refPath);
   let result;
-  try { result = await call(fr); } finally { fr.forEach((f) => { try { fs.unlinkSync(f); } catch {} }); }
+  const persona = db.prepare("SELECT auto_engine FROM personas WHERE id=?").get(personaId);
+  const extraRules = (persona?.auto_engine || "").startsWith("wan") ? WAN_RULES : "";
+  try { result = await call(fr, extraRules); } finally { fr.forEach((f) => { try { fs.unlinkSync(f); } catch {} }); }
 
   db.prepare("UPDATE videos SET ref_score=?, ref_notes=?, updated_at=datetime('now') WHERE id=?")
     .run(result.score, `${result.verdict}: ${result.reason}`, videoId);

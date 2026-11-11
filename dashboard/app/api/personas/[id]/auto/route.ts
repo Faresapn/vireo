@@ -19,8 +19,15 @@ export async function POST(
     count = Math.max(1, Math.min(10, parseInt(body.count || "1", 10)));
   } catch {}
 
-  const persona = db().prepare("SELECT id FROM personas WHERE id=?").get(id);
+  const persona = db().prepare("SELECT id, viral_cluster_slug FROM personas WHERE id=?").get(id) as any;
   if (!persona) return NextResponse.json({ error: "persona not found" }, { status: 404 });
+  // Idea-only persona (no viral cluster) has no ref pipeline — AUTO orchestrator
+  // (ingest→pick→generate) doesn't apply. Use "Generate Ide" instead.
+  if (!persona.viral_cluster_slug)
+    return NextResponse.json(
+      { error: "persona mode ide murni — pakai tombol Generate Ide, bukan AUTO" },
+      { status: 400 }
+    );
 
   const script = path.join(STUDIO_ROOT, "scripts", "auto_generate.mjs");
   const logDir = path.join(STUDIO_ROOT, "logs");

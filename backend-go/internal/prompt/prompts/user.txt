@@ -1,0 +1,8 @@
+NICHE: {{NICHE}}
+
+MASTER PROMPT TEMPLATE ({{MODE_NOTE}}):
+"""
+{{MASTER}}
+"""
+{{INSTRUCTION}}{{VOICE}}
+Here are the 3 reference frames (start, middle, end). Write the final prompt now.

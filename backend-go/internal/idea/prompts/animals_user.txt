@@ -1,0 +1,8 @@
+NICHE: {{NICHE}}
+
+GUIDE:
+"""
+{{GUIDE}}
+"""
+{{AVOID}}
+Design ONE new pair now.
